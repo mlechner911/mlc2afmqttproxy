@@ -1,5 +1,6 @@
 # MLC2AF MQTT Store & Forward Proxy
 
+[🇩🇪 Auf Deutsch lesen](README.md)
 An edge proxy for IoT sensors (e.g., Zigbee2MQTT) that ensures lossless telemetry transmission to the cloud on unreliable connections (e.g., edge gateways with cellular/poor WiFi).
 
 ## What does the proxy do?

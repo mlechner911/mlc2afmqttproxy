@@ -22,6 +22,7 @@ Der Proxy startet einen lokalen MQTT Broker (Mochi), an den Zigbee2MQTT (oder an
     * `none`: Standard-Verhalten (Kein Zeitstempel).
     * `json_inject`: Entpackt JSON-Payloads und injiziert den Zeitstempel als `ts` Attribut.
     * `v5_property`: Nutzt MQTT v5 und sendet den Zeitstempel als "User Property" Header.
+  * **Topic Rewrite:** Optional kann beim MQTT-Forwarding ein empfangener Topic-Präfix (`match_prefix`) durch einen anderen (`replace_with`) ersetzt werden (z.B. von `zigbee2mqtt/` auf `/v1/bridgedataxxx/`).
 * **Health & Diagnostik**: Eingebautes Web-Dashboard (Port `8097`) zeigt den Live-Pufferstand und Status-Informationen an (`/api/v1/health` liefert die Version).
 * **Ausfallsicher**: Out-of-the-Box Systemd-Deployment für Autostart nach Stromausfällen.
 
@@ -85,3 +86,9 @@ Alle Parameter und Architektur-Diagramme findest du in der [Konfigurations-Doku]
 
 ## Versionierung
 Die Version des Proxys wird beim Bauen (`task build`) automatisch aus deinen Git-Tags abgeleitet und fest in das Binary kompiliert. Sie kann jederzeit über den `GET /api/v1/health` Endpunkt abgefragt werden.
+
+## Lizenz
+Dieses Projekt steht unter der **GNU General Public License v3.0 (GPLv3)**.
+Copyright (C) 2026 Michael Lechner
+
+Durch diese Lizenz ist die Pflicht zur Namensnennung (Attribution) des ursprünglichen Autors sichergestellt. Jeder, der dieses Projekt verändert oder weiterverteilt, muss den Copyright-Hinweis beibehalten und seine Änderungen unter denselben Lizenzbedingungen (GPLv3) als Open Source zur Verfügung stellen. Siehe die Datei `LICENSE` für die vollständigen Lizenzbedingungen.

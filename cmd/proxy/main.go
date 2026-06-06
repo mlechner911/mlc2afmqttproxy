@@ -34,9 +34,9 @@ func main() {
 		fwd = forwarder.NewHTTPForwarder(cfg.HTTP.Endpoint, cfg.HTTP.Token)
 	} else {
 		if cfg.MQTT.TimestampMode == "v5_property" {
-			fwd = forwarder.NewMQTT5Forwarder(cfg.MQTT.Upstream, cfg.MQTT.Username, cfg.MQTT.Password)
+			fwd = forwarder.NewMQTT5Forwarder(cfg.MQTT.Upstream, cfg.MQTT.Username, cfg.MQTT.Password, cfg.MQTT.TopicRewrite)
 		} else {
-			fwd = forwarder.NewMQTTForwarder(cfg.MQTT.Upstream, cfg.MQTT.Username, cfg.MQTT.Password, cfg.MQTT.TimestampMode)
+			fwd = forwarder.NewMQTTForwarder(cfg.MQTT.Upstream, cfg.MQTT.Username, cfg.MQTT.Password, cfg.MQTT.TimestampMode, cfg.MQTT.TimestampField, cfg.MQTT.TopicRewrite)
 		}
 	}
 

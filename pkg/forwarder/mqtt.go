@@ -4,19 +4,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	paho "github.com/eclipse/paho.mqtt.golang"
+	"mlc2afmqttproxy/pkg/config"
 )
 
 type MQTTForwarder struct {
-	Upstream      string
-	TimestampMode string
-	client        paho.Client
+	Upstream       string
+	TimestampMode  string
+	TimestampField string
+	Rewrite        *config.TopicRewriteConf
+	client         paho.Client
 }
 
 // NewMQTTForwarder erstellt einen neuen Paho MQTT Client für den Cloud-Broker.
-func NewMQTTForwarder(upstream, username, password, timestampMode string) *MQTTForwarder {
+func NewMQTTForwarder(upstream, username, password, timestampMode, timestampField string, rewrite *config.TopicRewriteConf) *MQTTForwarder {
 	opts := paho.NewClientOptions()
 	opts.AddBroker(upstream)
 	opts.SetClientID("mlc2af-proxy-forwarder") // Falls nötig, kann dies über config dynamisiert werden
@@ -38,9 +42,11 @@ func NewMQTTForwarder(upstream, username, password, timestampMode string) *MQTTF
 	})
 
 	return &MQTTForwarder{
-		Upstream:      upstream,
-		TimestampMode: timestampMode,
-		client:        paho.NewClient(opts),
+		Upstream:       upstream,
+		TimestampMode:  timestampMode,
+		TimestampField: timestampField,
+		Rewrite:        rewrite,
+		client:         paho.NewClient(opts),
 	}
 }
 
@@ -68,14 +74,24 @@ func (f *MQTTForwarder) Send(topic string, payload []byte, timestamp time.Time) 
 		return fmt.Errorf("upstream mqtt client is not connected")
 	}
 
+	if f.Rewrite != nil && f.Rewrite.MatchPrefix != "" {
+		if strings.HasPrefix(topic, f.Rewrite.MatchPrefix) {
+			topic = f.Rewrite.ReplaceWith + strings.TrimPrefix(topic, f.Rewrite.MatchPrefix)
+		}
+	}
+
 	finalPayload := payload
 
 	if f.TimestampMode == "json_inject" {
-		var raw map[string]interface{}
-		if err := json.Unmarshal(payload, &raw); err == nil {
-			raw["ts"] = timestamp.UnixMilli() // You can also format as string if preferred, but usually ms timestamp is used
-			if injected, err := json.Marshal(raw); err == nil {
-				finalPayload = injected
+		var data map[string]interface{}
+		// Versuche Payload als JSON zu parsen
+		if err := json.Unmarshal(payload, &data); err == nil {
+			// "Inject if absent": überschreibe niemals einen existierenden Wert
+			if _, exists := data[f.TimestampField]; !exists {
+				data[f.TimestampField] = timestamp.UnixMilli()
+				if newPayload, err := json.Marshal(data); err == nil {
+					finalPayload = newPayload
+				}
 			}
 		}
 	}

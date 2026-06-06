@@ -24,7 +24,14 @@ type MQTTConf struct {
 	Upstream      string `yaml:"upstream"`
 	Username      string `yaml:"username"`
 	Password      string `yaml:"password"`
-	TimestampMode string `yaml:"timestamp_mode"` // "none", "json_inject", "v5_property"
+	TimestampMode  string            `yaml:"timestamp_mode"` // "none", "json_inject", "v5_property"
+	TimestampField string            `yaml:"timestamp_field"`
+	TopicRewrite   *TopicRewriteConf `yaml:"topic_rewrite,omitempty"`
+}
+
+type TopicRewriteConf struct {
+	MatchPrefix string `yaml:"match_prefix"`
+	ReplaceWith string `yaml:"replace_with"`
 }
 
 type HTTPConf struct {
@@ -61,6 +68,9 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.MQTT.TimestampMode == "" {
 		cfg.MQTT.TimestampMode = "none"
+	}
+	if cfg.MQTT.TimestampField == "" {
+		cfg.MQTT.TimestampField = "_ts"
 	}
 	if cfg.Server.Port == 0 {
 		cfg.Server.Port = 8080

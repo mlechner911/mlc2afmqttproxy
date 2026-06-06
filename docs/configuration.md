@@ -33,6 +33,14 @@ mqtt:
   password: "password"
   # Wie Zeitstempel an den MQTT Upstream gesendet werden (none, json_inject, v5_property)
   timestamp_mode: "json_inject"
+  # Name des injizierten Zeitstempel-Feldes im JSON (Standard: "_ts").
+  # Es wird "inject if absent" genutzt, d.h. wenn dieses Feld schon existiert, bleibt es unangetastet!
+  timestamp_field: "_ts"
+  
+  # Optionale Rewrite-Policy für das Base-Topic (z.B. umleiten auf einen Namespace)
+  topic_rewrite:
+    match_prefix: "zigbee2mqtt/"
+    replace_with: "/v1/bridgedataxxx/"
 
 http:
   # Upstream-Einstellungen (nur relevant wenn mode: "http")

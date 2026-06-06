@@ -5,21 +5,24 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
+	"mlc2afmqttproxy/pkg/config"
 )
 
 type MQTT5Forwarder struct {
 	Upstream string
+	Rewrite  *config.TopicRewriteConf
 	client   *autopaho.ConnectionManager
 	ctx      context.Context
 	cancel   context.CancelFunc
 }
 
 // NewMQTT5Forwarder erstellt einen neuen Paho MQTT v5 Client für den Cloud-Broker.
-func NewMQTT5Forwarder(upstream, username, password string) *MQTT5Forwarder {
+func NewMQTT5Forwarder(upstream, username, password string, rewrite *config.TopicRewriteConf) *MQTT5Forwarder {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	u, err := url.Parse(upstream)
@@ -53,6 +56,7 @@ func NewMQTT5Forwarder(upstream, username, password string) *MQTT5Forwarder {
 
 	return &MQTT5Forwarder{
 		Upstream: upstream,
+		Rewrite:  rewrite,
 		client:   cm,
 		ctx:      ctx,
 		cancel:   cancel,
@@ -81,6 +85,12 @@ func (f *MQTT5Forwarder) IsConnected() bool {
 func (f *MQTT5Forwarder) Send(topic string, payload []byte, timestamp time.Time) error {
 	if f.client == nil {
 		return fmt.Errorf("upstream mqtt client is not connected")
+	}
+
+	if f.Rewrite != nil && f.Rewrite.MatchPrefix != "" {
+		if strings.HasPrefix(topic, f.Rewrite.MatchPrefix) {
+			topic = f.Rewrite.ReplaceWith + strings.TrimPrefix(topic, f.Rewrite.MatchPrefix)
+		}
 	}
 
 	// Zeitstempel als RFC3339 String im Header (User Property)

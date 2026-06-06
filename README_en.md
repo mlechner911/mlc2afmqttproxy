@@ -27,8 +27,12 @@ Especially in industrial IoT or edge environments, Zigbee sensors offer enormous
   * `http`: Maps flat Zigbee JSON directly to the structured MLC Sensor Monitor format (`POST /api/v1/ingest`).
   * `mqtt`: Forwards MQTT messages with `QoS 1` to an upstream cloud broker. Since MQTT v3.1.1 does not support timestamp metadata by default, the proxy offers three configurable `timestamp_mode` options:
     * `none`: Default behavior (No timestamp).
-    * `json_inject`: Unpacks JSON payloads and injects the timestamp as a `ts` attribute.
+    * `json_inject`: Unpacks JSON payloads and injects the timestamp (Unix ms) as the `_ts` attribute by default ("inject if absent" - existing fields are never overwritten!).
     * `v5_property`: Uses MQTT v5 and sends the timestamp as a "User Property" header.
+  
+  > [!TIP]
+  > **Note on Timestamps & Zigbee2MQTT:** If you are not using our own MLC backend, you should enable the `last_seen` option (as `epoch`) in Zigbee2MQTT. You can then set `timestamp_field: "last_seen"` in the proxy configuration. The proxy will act as a clean polyfill and only insert its reception time if Zigbee2MQTT hasn't provided a value yet.
+
   * **Topic Rewrite:** Optionally, an incoming topic prefix (`match_prefix`) can be replaced with another (`replace_with`) during MQTT forwarding (e.g., from `zigbee2mqtt/` to `/v1/bridgedataxxx/`).
 * **Health & Diagnostics**: Built-in web dashboard (Port `8097`) displays the live buffer level and status information (`/api/v1/health` returns the version).
 * **Failsafe**: Out-of-the-box Systemd deployment for autostart after power failures.

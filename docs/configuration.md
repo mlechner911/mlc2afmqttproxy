@@ -1,5 +1,6 @@
 # Konfiguration (`config.yaml`)
 
+[🇬🇧 Read this in English](configuration_en.md)
 Der Proxy wird vollständig über eine zentrale `config.yaml` Datei gesteuert. Diese Datei muss im selben Verzeichnis wie das `proxy` Binary liegen.
 
 ## Konfigurations-Parameter

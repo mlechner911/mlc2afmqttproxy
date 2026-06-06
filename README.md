@@ -48,11 +48,12 @@ graph TD
     AWS[AWS IoT Core / Cloud Broker]
   end
 
-  Z2M -- MQTT v3.1.1/v5 --> Bridge
-  Bridge -- Unidirektional --> Proxy
-  Proxy -- Puffert Daten --> DB
-  Proxy -- Store & Forward --> AWS
-  Proxy -- WebSocket /mqtt --> UI
+  Z2M <-->|MQTT v3.1.1/v5| Bridge
+  Bridge <-->|Bidirektionaler Steuerkanal| Proxy
+  Proxy <-->|Puffert & liest Daten| DB
+  Proxy -->|Store & Forward| AWS
+  Proxy <-->|WebSocket /mqtt| UI
+
 ```
 
 ### 1. Das Live Dashboard (UI)

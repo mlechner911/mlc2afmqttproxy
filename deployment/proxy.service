@@ -1,0 +1,18 @@
+[Unit]
+Description=MLC2AF MQTT Store and Forward Proxy
+After=network.target
+
+[Service]
+Type=simple
+# Ersetze User durch den tatsächlichen System-User (z.B. mlc, ubuntu, pi)
+User=mlc
+# Ersetze diesen Pfad durch den tatsächlichen Installationspfad auf dem Zielsystem
+WorkingDirectory=/opt/mlc2afmqttproxy
+ExecStart=/opt/mlc2afmqttproxy/bin/proxy
+Restart=on-failure
+RestartSec=5
+# Optional: Umgebungsvariablen hier setzen
+# Environment="GIN_MODE=release"
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+mode: "http"
+
+server:
+  port: 8097
+
+storage:
+  path: "./data"
+
+mqtt:
+  local_port: 1884
+  upstream: "tcp://cloud-broker.example.com:1883"
+  username: "user"
+  password: "password"
+
+http:
+  endpoint: "https://api.example.com/ingest"
+  token: "my-secret-token"

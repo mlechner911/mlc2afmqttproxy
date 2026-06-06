@@ -1,0 +1,49 @@
+version: '3'
+
+vars:
+  # Versucht die Git-Version zu lesen, Fallback ist "v0.1.0-dev"
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0-dev"
+  LDFLAGS: "-X 'main.Version={{.VERSION}}'"
+
+tasks:
+  build-server:
+    desc: "Baut das Go-Backend in den bin/ Ordner"
+    cmds:
+      - mkdir -p bin
+      - go build -ldflags="{{.LDFLAGS}}" -o bin/proxy cmd/proxy/main.go
+
+  build-client:
+    desc: "Baut den Frontend-Client bzw. generiert API-Clients (aktuell Platzhalter)"
+    cmds:
+      - echo "Bauen des Clients..."
+
+  build:
+    desc: "Baut sowohl Server als auch Client"
+    deps: [build-server, build-client]
+
+  run:
+    desc: "Baut und startet den Proxy-Server lokal"
+    deps: [build-server]
+    cmds:
+      - ./bin/proxy
+
+  clean:
+    desc: "Löscht generierte Binaries und lokale Daten"
+    cmds:
+      - rm -rf bin/
+      - rm -rf data/
+
+  setup:
+    desc: "Initialisiert die Go-Module"
+    cmds:
+      - go mod tidy
+
+  install-service:
+    desc: "Installiert den Systemd Service (benötigt sudo)"
+    cmds:
+      - sudo cp deployment/proxy.service /etc/systemd/system/mlc2afmqttproxy.service
+      - sudo systemctl daemon-reload
+      - sudo systemctl enable mlc2afmqttproxy
+      - sudo systemctl restart mlc2afmqttproxy
+      - 'echo "Service installiert und gestartet! Logs gibt es via journalctl -fu mlc2afmqttproxy"'

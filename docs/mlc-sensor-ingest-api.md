@@ -11,8 +11,8 @@ mit Kalibrier-Offset, idempotent.
 | :--- | :--- |
 | **Methode / Pfad** | `POST /api/v1/ingest` |
 | **Content-Type** | `application/json` |
-| **Go-API direkt (Dev)** | `http://xeonserver.fritz.box:58080/api/v1/ingest` |
-| **Über Caddy (Prod, Single-Entry)** | `https://xeonserver.fritz.box:58443/api/v1/ingest` |
+| **Go-API direkt (Dev)** | `http://<server-domain>:58080/api/v1/ingest` |
+| **Über Caddy (Prod, Single-Entry)** | `https://<server-domain>:58443/api/v1/ingest` |
 | **Backend-Bind** | `HTTP_ADDR` (Default `0.0.0.0:58080`; Container i.d.R. `:58080`) |
 | **Auth** | optionaler Geräte-Token (s. u.) — **kein** `mlcauth`/JWT |
 
@@ -92,7 +92,7 @@ keine User-Session), sondern einen optionalen **statischen Token**:
 Offen (kein Token gesetzt):
 
 ```bash
-curl -X POST http://xeonserver.fritz.box:58080/api/v1/ingest \
+curl -X POST http://<server-domain>:58080/api/v1/ingest \
   -H 'Content-Type: application/json' \
   -d '{"device":"freezer-lab-1","ieee":"0x00124b00257f1a2b",
        "readings":[{"key":"temperature","value":4.21}]}'
@@ -101,7 +101,7 @@ curl -X POST http://xeonserver.fritz.box:58080/api/v1/ingest \
 Mit Token:
 
 ```bash
-curl -X POST https://xeonserver.fritz.box:58443/api/v1/ingest \
+curl -X POST https://<server-domain>:58443/api/v1/ingest \
   -H 'Content-Type: application/json' \
   -H 'X-Ingest-Token: <DEIN_TOKEN>' \
   -d '{"device":"freezer-lab-1","readings":[{"key":"temperature","value":4.21,"ts":"2026-06-06T12:00:00Z"}]}'
@@ -115,9 +115,9 @@ info:
   title: MLC Sensor Monitor — Ingest
   version: "1.0"
 servers:
-  - url: https://xeonserver.fritz.box:58443
+  - url: https://<server-domain>:58443
     description: Caddy (Single-Entry, Prod)
-  - url: http://xeonserver.fritz.box:58080
+  - url: http://<server-domain>:58080
     description: Go-API direkt (Dev)
 paths:
   /api/v1/ingest:
@@ -174,7 +174,7 @@ Den Ingest-Pfad **vor** der `forward_auth`-Regel behandeln, damit Geräte ohne J
 durchkommen (sie authentisieren per `X-Ingest-Token`):
 
 ```caddyfile
-xeonserver.fritz.box {
+<server-domain> {
     # 1) Geräte-Ingest: KEIN forward_auth, nur Geräte-Token (im Backend geprüft)
     handle /api/v1/ingest {
         reverse_proxy mlc-sensor-backend:58080

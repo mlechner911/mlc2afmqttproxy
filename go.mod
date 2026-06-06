@@ -4,6 +4,7 @@ go 1.25.5
 
 require (
 	github.com/dgraph-io/badger/v4 v4.9.1
+	github.com/eclipse/paho.golang v0.23.0
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/gin-contrib/static v1.1.6
 	github.com/gin-gonic/gin v1.12.0

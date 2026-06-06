@@ -5,6 +5,9 @@ Ein  Edge-Proxy für IoT-Sensoren (z.B. Zigbee2MQTT), der auf unzuverlässigen V
 ## Was macht der Proxy?
 Der Proxy startet einen lokalen MQTT Broker (Mochi), an den Zigbee2MQTT (oder andere lokale Sensoren) ihre Daten senden. Der Proxy fängt diese Daten ab und schreibt sie lokal und extrem schnell auf die Festplatte (BadgerDB). Ein unabhängiger Hintergrund-Worker versucht anschließend, diese Daten an die Cloud weiterzuleiten.
 
+> [!IMPORTANT]
+> **Der Hauptvorteil dieser Lösung:** Es können keine Daten verloren gehen, selbst bei einem kompletten Internet- oder Netzwerkausfall. Voraussetzung dafür ist lediglich, dass dieser Proxy und die Datenquelle (z.B. Zigbee2MQTT) auf dem gleichen Server laufen, der durch eine USV (Unterbrechungsfreie Stromversorgung) abgesichert ist. Da der Proxy extrem ressourcenschonend ist, reicht hierfür bereits ein sehr kleiner Rechner wie ein Raspberry Pi völlig aus. Kommt das Internet zurück, werden alle zwischengespeicherten Daten mit den korrekten historischen Zeitstempeln an die Cloud übertragen.
+
 ### Kern-Features
 *   **Effizienz:** Nutzt BadgerDB für extrem schnelles, lokales Caching.
 *   **Ausfallsicherheit:** Der Proxy springt ein, wenn der Master-Broker offline ist.
@@ -15,7 +18,10 @@ Der Proxy startet einen lokalen MQTT Broker (Mochi), an den Zigbee2MQTT (oder an
 * **Offline Catch-Up (Time-Travel)**: Die exakten historischen Zeitstempel (`ts`) des Sensor-Ereignisses werden bei der Übertragung nachgereicht. So entstehen keine verfälschten Graphen, wenn das Internet wiederkehrt.
 * **Zwei Upstream-Modi**: 
   * `http`: Mappt flaches Zigbee-JSON direkt auf das strukturierte MLC Sensor Monitor Format (`POST /api/v1/ingest`).
-  * `mqtt`: Leitet MQTT-Nachrichten mit `QoS 1` an einen vorgeschalteten Cloud-Broker weiter.
+  * `mqtt`: Leitet MQTT-Nachrichten mit `QoS 1` an einen vorgeschalteten Cloud-Broker weiter. Da MQTT v3.1.1 standardmäßig keine Zeitstempel-Metadaten unterstützt, bietet der Proxy drei konfigurierbare `timestamp_mode` Optionen:
+    * `none`: Standard-Verhalten (Kein Zeitstempel).
+    * `json_inject`: Entpackt JSON-Payloads und injiziert den Zeitstempel als `ts` Attribut.
+    * `v5_property`: Nutzt MQTT v5 und sendet den Zeitstempel als "User Property" Header.
 * **Health & Diagnostik**: Eingebautes Web-Dashboard (Port `8097`) zeigt den Live-Pufferstand und Status-Informationen an (`/api/v1/health` liefert die Version).
 * **Ausfallsicher**: Out-of-the-Box Systemd-Deployment für Autostart nach Stromausfällen.
 
@@ -45,7 +51,7 @@ graph TD
   end
 
   subgraph cloud [Cloud]
-    AWS[AWS IoT Core / Cloud Broker]
+    AWS[AWS IoT Core / Cloud Broker/MLC IOT]
   end
 
   Z2M <-->|MQTT v3.1.1/v5| Bridge

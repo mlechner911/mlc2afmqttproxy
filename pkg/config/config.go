@@ -19,11 +19,12 @@ type StorageConf struct {
 }
 
 type MQTTConf struct {
-	LocalPort int    `yaml:"local_port"`
-	WsPort    int    `yaml:"ws_port"`
-	Upstream  string `yaml:"upstream"`
-	Username  string `yaml:"username"`
-	Password  string `yaml:"password"`
+	LocalPort     int    `yaml:"local_port"`
+	WsPort        int    `yaml:"ws_port"`
+	Upstream      string `yaml:"upstream"`
+	Username      string `yaml:"username"`
+	Password      string `yaml:"password"`
+	TimestampMode string `yaml:"timestamp_mode"` // "none", "json_inject", "v5_property"
 }
 
 type HTTPConf struct {
@@ -57,6 +58,9 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.MQTT.WsPort == 0 {
 		cfg.MQTT.WsPort = 1885
+	}
+	if cfg.MQTT.TimestampMode == "" {
+		cfg.MQTT.TimestampMode = "none"
 	}
 	if cfg.Server.Port == 0 {
 		cfg.Server.Port = 8080

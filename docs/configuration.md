@@ -9,6 +9,13 @@ Der Proxy wird vollständig über eine zentrale `config.yaml` Datei gesteuert. D
 # Zulässige Werte: "http" oder "mqtt"
 mode: "http"
 
+# Hinweis zum MQTT-Modus & Zeitstempel:
+# Da wir bei Store & Forward Offline-Daten nachreichen, ist der Zeitstempel wichtig.
+# Die Option mqtt.timestamp_mode steuert das Verhalten:
+# - "none": Standard MQTT v3.1.1, Zeitstempel wird ignoriert.
+# - "json_inject": (Empfohlen) Entpackt den Payload (sofern JSON), fügt "ts" als Unix-Timestamp (ms) ein und packt ihn neu.
+# - "v5_property": Sendet die Nachricht via MQTT v5 und übergibt den Zeitstempel (RFC3339) als "User Property" (ts).
+
 server:
   # Der Port für das Diagnostik-Web-Dashboard und die Health-API
   port: 8097
@@ -24,6 +31,8 @@ mqtt:
   upstream: "tcp://cloud-broker.example.com:1883"
   username: "user"
   password: "password"
+  # Wie Zeitstempel an den MQTT Upstream gesendet werden (none, json_inject, v5_property)
+  timestamp_mode: "json_inject"
 
 http:
   # Upstream-Einstellungen (nur relevant wenn mode: "http")

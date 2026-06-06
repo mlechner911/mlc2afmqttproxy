@@ -33,7 +33,11 @@ func main() {
 	if cfg.Mode == "http" {
 		fwd = forwarder.NewHTTPForwarder(cfg.HTTP.Endpoint, cfg.HTTP.Token)
 	} else {
-		fwd = forwarder.NewMQTTForwarder(cfg.MQTT.Upstream, cfg.MQTT.Username, cfg.MQTT.Password)
+		if cfg.MQTT.TimestampMode == "v5_property" {
+			fwd = forwarder.NewMQTT5Forwarder(cfg.MQTT.Upstream, cfg.MQTT.Username, cfg.MQTT.Password)
+		} else {
+			fwd = forwarder.NewMQTTForwarder(cfg.MQTT.Upstream, cfg.MQTT.Username, cfg.MQTT.Password, cfg.MQTT.TimestampMode)
+		}
 	}
 
 	// Init Mochi Broker

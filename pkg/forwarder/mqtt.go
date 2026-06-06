@@ -1,6 +1,7 @@
 package forwarder
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -9,12 +10,13 @@ import (
 )
 
 type MQTTForwarder struct {
-	Upstream string
-	client   paho.Client
+	Upstream      string
+	TimestampMode string
+	client        paho.Client
 }
 
 // NewMQTTForwarder erstellt einen neuen Paho MQTT Client für den Cloud-Broker.
-func NewMQTTForwarder(upstream, username, password string) *MQTTForwarder {
+func NewMQTTForwarder(upstream, username, password, timestampMode string) *MQTTForwarder {
 	opts := paho.NewClientOptions()
 	opts.AddBroker(upstream)
 	opts.SetClientID("mlc2af-proxy-forwarder") // Falls nötig, kann dies über config dynamisiert werden
@@ -36,8 +38,9 @@ func NewMQTTForwarder(upstream, username, password string) *MQTTForwarder {
 	})
 
 	return &MQTTForwarder{
-		Upstream: upstream,
-		client:   paho.NewClient(opts),
+		Upstream:      upstream,
+		TimestampMode: timestampMode,
+		client:        paho.NewClient(opts),
 	}
 }
 
@@ -65,15 +68,27 @@ func (f *MQTTForwarder) Send(topic string, payload []byte, timestamp time.Time) 
 		return fmt.Errorf("upstream mqtt client is not connected")
 	}
 
+	finalPayload := payload
+
+	if f.TimestampMode == "json_inject" {
+		var raw map[string]interface{}
+		if err := json.Unmarshal(payload, &raw); err == nil {
+			raw["ts"] = timestamp.UnixMilli() // You can also format as string if preferred, but usually ms timestamp is used
+			if injected, err := json.Marshal(raw); err == nil {
+				finalPayload = injected
+			}
+		}
+	}
+
 	// QoS 1 (Mindestens einmal), Retained=false
-	token := f.client.Publish(topic, 1, false, payload)
+	token := f.client.Publish(topic, 1, false, finalPayload)
 	token.Wait()
 	
 	if token.Error() != nil {
 		return token.Error()
 	}
 
-	log.Printf("[MQTT-Upstream] Erfolgreich gesendet: Topic='%s', %d bytes", topic, len(payload))
+	log.Printf("[MQTT-Upstream] Erfolgreich gesendet: Topic='%s', %d bytes", topic, len(finalPayload))
 	return nil
 }
 

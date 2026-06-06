@@ -1,5 +1,12 @@
 # Worklog: mlc2afmqttproxy
 
+# Worklog
+
+- **2026-06-06**: Umbau des Dashboards auf Svelte & Vite. Echter rekursiver MQTT-Tree-Explorer integriert.
+- **2026-06-06**: Mochi-MQTT WebSocket-Listener hinzugefügt und über Gin Reverse-Proxy (`/mqtt`) vor CORS/Firewall-Problemen geschützt.
+- **2026-06-06**: UI Styling komplett auf IDE-Theme (Dark Mode, JetBrains Mono, Inter) gewechselt.
+- **2026-06-06**: `templates/` Ordner gelöscht, Svelte Frontend in `.gitignore` eingetragen.
+
 ## 2026-06-06
 - **Basis-Architektur implementiert**:
   - Go Modul initialisiert.
@@ -20,4 +27,10 @@
   - Web-Dashboard dynamisiert (liest Live-Puffer aus DB).
   - `Taskfile.yml` eingerichtet. Versionierung via Git-Tag an `ldflags` angebunden.
   - `proxy.service` für Systemd vorbereitet und `task install-service` angelegt.
+- **CLI-Tools**:
+  - `cmd/mqttbridge` CLI-Tool implementiert für einfaches Forwarding von Master- zu Slave-Brokern (mit --help, --version via ldflags).
+- **Web-Dashboard Upgrade (Svelte)**:
+  - HTML/Bootstrap Dashboard durch moderne **Vite + Svelte + TypeScript** Single Page Application ersetzt.
+  - Mochi Broker um **WebSocket-Listener** auf Port 1885 erweitert.
+  - Das Dashboard verbindet sich nun live via WebSockets zum MQTT Broker und zeigt den kompletten, laufend aktualisierten MQTT-Tree an.
 - **Dokumentation**: `docs/plan.md`, `docs/architecture.md`, `docs/configuration.md` und `README.md` aktualisiert.

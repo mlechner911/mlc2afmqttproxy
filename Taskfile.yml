@@ -14,13 +14,19 @@ tasks:
       - go build -ldflags="{{.LDFLAGS}}" -o bin/proxy cmd/proxy/main.go
 
   build-client:
-    desc: "Baut den Frontend-Client bzw. generiert API-Clients (aktuell Platzhalter)"
+    desc: "Baut den Svelte Frontend-Client"
     cmds:
-      - echo "Bauen des Clients..."
+      - cd frontend && npm install && npm run build
+
+  build-bridge:
+    desc: "Baut das MQTT Bridge CLI-Tool in den bin/ Ordner"
+    cmds:
+      - mkdir -p bin
+      - go build -ldflags="{{.LDFLAGS}}" -o bin/mqttbridge cmd/mqttbridge/main.go
 
   build:
-    desc: "Baut sowohl Server als auch Client"
-    deps: [build-server, build-client]
+    desc: "Baut Server, Client und Bridge"
+    deps: [build-server, build-client, build-bridge]
 
   run:
     desc: "Baut und startet den Proxy-Server lokal"

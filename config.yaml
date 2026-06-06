@@ -8,6 +8,7 @@ storage:
 
 mqtt:
   local_port: 1884
+  ws_port: 1885
   upstream: "tcp://cloud-broker.example.com:1883"
   username: "user"
   password: "password"

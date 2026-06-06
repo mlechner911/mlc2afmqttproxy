@@ -20,6 +20,7 @@ type StorageConf struct {
 
 type MQTTConf struct {
 	LocalPort int    `yaml:"local_port"`
+	WsPort    int    `yaml:"ws_port"`
 	Upstream  string `yaml:"upstream"`
 	Username  string `yaml:"username"`
 	Password  string `yaml:"password"`
@@ -53,6 +54,9 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.MQTT.LocalPort == 0 {
 		cfg.MQTT.LocalPort = 1883
+	}
+	if cfg.MQTT.WsPort == 0 {
+		cfg.MQTT.WsPort = 1885
 	}
 	if cfg.Server.Port == 0 {
 		cfg.Server.Port = 8080

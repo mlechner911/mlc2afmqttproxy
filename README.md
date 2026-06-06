@@ -1,12 +1,17 @@
 # MLC2AF MQTT Store & Forward Proxy
 
-Ein robuster Edge-Proxy für IoT-Sensoren (z.B. Zigbee2MQTT), der auf unzuverlässigen Verbindungen (z.B. Edge-Gateways mit Mobilfunk/schlechtem WLAN) für eine verlustfreie Telemetrie-Übertragung in die Cloud sorgt.
+Ein  Edge-Proxy für IoT-Sensoren (z.B. Zigbee2MQTT), der auf unzuverlässigen Verbindungen (z.B. Edge-Gateways mit Mobilfunk/schlechtem WLAN) für eine verlustfreie Telemetrie-Übertragung in die Cloud sorgt.
 
 ## Was macht der Proxy?
 Der Proxy startet einen lokalen MQTT Broker (Mochi), an den Zigbee2MQTT (oder andere lokale Sensoren) ihre Daten senden. Der Proxy fängt diese Daten ab und schreibt sie lokal und extrem schnell auf die Festplatte (BadgerDB). Ein unabhängiger Hintergrund-Worker versucht anschließend, diese Daten an die Cloud weiterzuleiten.
 
 ### Kern-Features
-* **Store & Forward**: Fällt das Internet am Gateway aus, werden alle Nachrichten lokal in der Warteschlange gepuffert. Nichts geht verloren.
+*   **Effizienz:** Nutzt BadgerDB für extrem schnelles, lokales Caching.
+*   **Ausfallsicherheit:** Der Proxy springt ein, wenn der Master-Broker offline ist.
+*   **Live Dashboard:** Integrierter, reaktiver MQTT Tree Explorer (Websocket-basiert, Svelte) auf Port `8097`.
+*   **Mochi-MQTT Broker:** Eingebetteter, ressourcenschonender MQTT Broker für lokale Geräte.
+*   **Protokoll-Support:** Voller Support für MQTT v3.1.1, MQTT v4 und MQTT v5.n Features nutzen.
+  * **Ausgehend (Upstream & Bridge)**: Verwendet bewusst **MQTT v3.1.1** für maximale Kompatibilität, da ein Großteil aller Cloud-Broker (wie AWS IoT Core) diesen Standard für die Datenübernahme (Ingestion) bevorzugt unterstützt.
 * **Offline Catch-Up (Time-Travel)**: Die exakten historischen Zeitstempel (`ts`) des Sensor-Ereignisses werden bei der Übertragung nachgereicht. So entstehen keine verfälschten Graphen, wenn das Internet wiederkehrt.
 * **Zwei Upstream-Modi**: 
   * `http`: Mappt flaches Zigbee-JSON direkt auf das strukturierte MLC Sensor Monitor Format (`POST /api/v1/ingest`).
@@ -22,8 +27,20 @@ Das Projekt nutzt [Task](https://taskfile.dev/) für automatisierte Builds.
 3. **Lokal starten:** `task run`
 4. **Als Hintergrunddienst (Linux) installieren:** `task install-service` (erfordert sudo)
 
+## CLI-Tools
+Zusätzlich zum Proxy beinhaltet das Projekt nützliche Hilfsprogramme in `cmd/`.
+
+### MQTT Bridge
+Ein einfaches CLI-Tool (`bin/mqttbridge`), um für Testzwecke oder lokale Umleitungen alle Nachrichten eines "Master" MQTT-Brokers (z.B. ein lokaler Zigbee2MQTT Broker) an einen "Slave" Broker (z.B. dieser Proxy) weiterzuleiten:
+```bash
+./bin/mqttbridge --master tcp://localhost:1883 --slave tcp://localhost:1884 --topic "#"
+```
+Nutze `./bin/mqttbridge --help` für weitere Optionen.
+
+> [!NOTE]
+> **Einschränkung:** Das Forwarding ist aktuell **streng unidirektional** (Master -> Slave). Es ist mit diesem Test-Tool also _nicht_ möglich, bidirektional zu arbeiten, z.B. um über den Slave-Broker ein Licht am Master-Broker einzuschalten.
+
 ## Konfiguration
-Die Steuerung erfolgt vollständig über die `config.yaml` Datei.
 Alle Parameter und Architektur-Diagramme findest du in der [Konfigurations-Doku](docs/configuration.md).
 
 ## Versionierung

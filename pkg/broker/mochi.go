@@ -60,7 +60,7 @@ func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packe
 }
 
 // StartLocalBroker startet den eingebetteten Mochi MQTT Broker.
-func StartLocalBroker(port int, store *storage.Store) (*mqtt.Server, error) {
+func StartLocalBroker(port int, wsPort int, store *storage.Store) (*mqtt.Server, error) {
 	server := mqtt.New(nil)
 
 	// Anonyme Verbindungen erlauben (nur für lokales Zigbee2MQTT)
@@ -74,6 +74,16 @@ func StartLocalBroker(port int, store *storage.Store) (*mqtt.Server, error) {
 	err := server.AddListener(listeners.NewTCP(listeners.Config{
 		ID:      "tcp-local",
 		Address: address,
+	}))
+	if err != nil {
+		return nil, err
+	}
+
+	// Lokaler WebSocket Listener für das Live Dashboard
+	wsAddress := fmt.Sprintf(":%d", wsPort)
+	err = server.AddListener(listeners.NewWebsocket(listeners.Config{
+		ID:      "ws-local",
+		Address: wsAddress,
 	}))
 	if err != nil {
 		return nil, err

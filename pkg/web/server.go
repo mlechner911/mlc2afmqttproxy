@@ -3,8 +3,12 @@ package web
 import (
 	"fmt"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
+	//"fmt"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-contrib/static"
 	"mlc2afmqttproxy/pkg/storage"
 )
 
@@ -12,17 +16,21 @@ import (
 func StartServer(port int, store *storage.Store, version string) error {
 	r := gin.Default()
 
-	// Einfaches HTML Template laden
-	r.LoadHTMLGlob("templates/*")
+	// Statische Dateien ausliefern (Svelte Frontend)
+	r.Use(static.Serve("/", static.LocalFile("./frontend/dist", false)))
 
-	r.GET("/", func(c *gin.Context) {
+	// Proxy WebSockets to Local Mochi Broker on Port 1885
+	wsTarget, _ := url.Parse("http://localhost:1885")
+	wsProxy := httputil.NewSingleHostReverseProxy(wsTarget)
+	r.GET("/mqtt", func(c *gin.Context) {
+		wsProxy.ServeHTTP(c.Writer, c.Request)
+	})
+
+	// API für Buffer Count
+	r.GET("/api/v1/stats", func(c *gin.Context) {
 		count, _ := store.GetSize()
-		recent, _ := store.GetRecent(10)
-
-		c.HTML(http.StatusOK, "index.html", gin.H{
-			"title": "Zigbee Gateway Proxy Dashboard",
+		c.JSON(http.StatusOK, gin.H{
 			"buffer_count": count,
-			"recent": recent,
 		})
 	})
 

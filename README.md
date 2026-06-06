@@ -6,6 +6,12 @@ Ein  Edge-Proxy für IoT-Sensoren (z.B. Zigbee2MQTT), der auf unzuverlässigen V
 ## Was macht der Proxy?
 Der Proxy startet einen lokalen MQTT Broker (Mochi), an den Zigbee2MQTT (oder andere lokale Sensoren) ihre Daten senden. Der Proxy fängt diese Daten ab und schreibt sie lokal und extrem schnell auf die Festplatte (BadgerDB). Ein unabhängiger Hintergrund-Worker versucht anschließend, diese Daten an die Cloud weiterzuleiten.
 
+### Warum überhaupt Zigbee Sensoren nutzen?
+Besonders im industriellen IoT- oder Edge-Umfeld bieten Zigbee-Sensoren enorme Vorteile:
+1. **Low Power & Batteriebetrieben:** Zigbee-Geräte verbrauchen extrem wenig Strom. Ein kleiner Sensor (z.B. für Temperatur oder Luftfeuchtigkeit) kann mit einer einzigen Knopfzelle oft **mehrere Jahre** ohne Batteriewechsel betrieben werden.
+2. **Mesh-Netzwerk:** Zigbee baut ein sich selbst heilendes Mesh-Netzwerk auf. Jedes an den Strom angeschlossene Zigbee-Gerät (z.B. eine smarte Steckdose oder ein Repeater) leitet das Signal anderer Sensoren automatisch weiter, wodurch riesige Reichweiten und eine hohe Ausfallsicherheit selbst in verwinkelten Gebäuden erreicht werden.
+3. **Kosten & Vielfalt:** Es gibt eine riesige Auswahl an extrem günstigen und zuverlässigen Sensoren unterschiedlichster Hersteller, die dank *Zigbee2MQTT* alle nahtlos herstellerübergreifend zusammenarbeiten.
+
 > [!IMPORTANT]
 > **Der Hauptvorteil dieser Lösung:** Es können keine Daten verloren gehen, selbst bei einem kompletten Internet- oder Netzwerkausfall. Voraussetzung dafür ist lediglich, dass dieser Proxy und die Datenquelle (z.B. Zigbee2MQTT) auf dem gleichen Server laufen, der durch eine USV (Unterbrechungsfreie Stromversorgung) abgesichert ist. Da der Proxy extrem ressourcenschonend ist, reicht hierfür bereits ein sehr kleiner Rechner wie ein Raspberry Pi völlig aus. Kommt das Internet zurück, werden alle zwischengespeicherten Daten mit den korrekten historischen Zeitstempeln an die Cloud übertragen.
 

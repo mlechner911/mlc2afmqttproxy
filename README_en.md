@@ -6,6 +6,12 @@ An edge proxy for IoT sensors (e.g., Zigbee2MQTT) that ensures lossless telemetr
 ## What does the proxy do?
 The proxy starts a local MQTT broker (Mochi) to which Zigbee2MQTT (or other local sensors) send their data. The proxy intercepts this data and writes it locally and extremely fast to disk (BadgerDB). An independent background worker then attempts to forward this data to the cloud.
 
+### Why use Zigbee sensors in the first place?
+Especially in industrial IoT or edge environments, Zigbee sensors offer enormous advantages:
+1. **Low Power & Battery Operated:** Zigbee devices consume extremely little power. A small sensor (e.g., for temperature or humidity) can often run for **several years** on a single coin cell battery without needing a replacement.
+2. **Mesh Network:** Zigbee builds a self-healing mesh network. Every mains-powered Zigbee device (e.g., a smart plug or repeater) automatically forwards the signal of other sensors, achieving huge ranges and high reliability even in complex buildings.
+3. **Cost & Variety:** There is a massive selection of extremely affordable and reliable sensors from various manufacturers, all working seamlessly together cross-vendor thanks to *Zigbee2MQTT*.
+
 > [!IMPORTANT]
 > **The main advantage of this solution:** No data can be lost, even in the event of a complete internet or network outage. The only requirement is that this proxy and the data source (e.g., Zigbee2MQTT) run on the same server, which is protected by a UPS (Uninterruptible Power Supply). Since the proxy is extremely resource-efficient, a very small computer like a Raspberry Pi is completely sufficient for this. When the internet connection is restored, all cached data is transmitted to the cloud with the correct historical timestamps.
 

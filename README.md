@@ -27,10 +27,43 @@ Das Projekt nutzt [Task](https://taskfile.dev/) für automatisierte Builds.
 3. **Lokal starten:** `task run`
 4. **Als Hintergrunddienst (Linux) installieren:** `task install-service` (erfordert sudo)
 
-## CLI-Tools
+## Architektur & Tools
+
+Dieses Projekt besteht aus mehreren Komponenten, die eng zusammenarbeiten:
+
+```mermaid
+graph TD
+  subgraph Lokales Netzwerk
+    Z2M[Zigbee2MQTT Broker]
+  end
+
+  subgraph mlc2afmqttproxy (Gateway)
+    Bridge(cmd/mqttbridge)
+    Proxy(cmd/proxy)
+    DB[(BadgerDB)]
+    UI[Svelte Live Dashboard]
+  end
+
+  subgraph Cloud
+    AWS[AWS IoT Core / Cloud Broker]
+  end
+
+  Z2M -- MQTT v3.1.1/v5 --> Bridge
+  Bridge -- Unidirektional --> Proxy
+  Proxy -- Puffert Daten --> DB
+  Proxy -- Store & Forward --> AWS
+  Proxy -- WebSocket (/mqtt) --> UI
+```
+
+### 1. Das Live Dashboard (UI)
+Der Proxy bietet auf Port `8097` ein integriertes Web-Dashboard (Svelte). Es zeigt den Puffer-Status an und bietet einen reaktiven **Live MQTT Tree Explorer**.
+
+![Live MQTT Dashboard Screenshot](docs/dashboard.png)
+
+### 2. CLI-Tools
 Zusätzlich zum Proxy beinhaltet das Projekt nützliche Hilfsprogramme in `cmd/`.
 
-### MQTT Bridge
+#### MQTT Bridge
 Ein einfaches CLI-Tool (`bin/mqttbridge`), um für Testzwecke oder lokale Umleitungen alle Nachrichten eines "Master" MQTT-Brokers (z.B. ein lokaler Zigbee2MQTT Broker) an einen "Slave" Broker (z.B. dieser Proxy) weiterzuleiten:
 ```bash
 ./bin/mqttbridge --master tcp://localhost:1883 --slave tcp://localhost:1884 --topic "#"

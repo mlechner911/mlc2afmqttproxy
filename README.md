@@ -33,18 +33,18 @@ Dieses Projekt besteht aus mehreren Komponenten, die eng zusammenarbeiten:
 
 ```mermaid
 graph TD
-  subgraph Lokales Netzwerk
+  subgraph local [Lokales Netzwerk]
     Z2M[Zigbee2MQTT Broker]
   end
 
-  subgraph mlc2afmqttproxy (Gateway)
+  subgraph gateway [mlc2afmqttproxy Gateway]
     Bridge(cmd/mqttbridge)
     Proxy(cmd/proxy)
     DB[(BadgerDB)]
     UI[Svelte Live Dashboard]
   end
 
-  subgraph Cloud
+  subgraph cloud [Cloud]
     AWS[AWS IoT Core / Cloud Broker]
   end
 
@@ -52,7 +52,7 @@ graph TD
   Bridge -- Unidirektional --> Proxy
   Proxy -- Puffert Daten --> DB
   Proxy -- Store & Forward --> AWS
-  Proxy -- WebSocket (/mqtt) --> UI
+  Proxy -- WebSocket /mqtt --> UI
 ```
 
 ### 1. Das Live Dashboard (UI)

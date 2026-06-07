@@ -18,6 +18,8 @@ mode: "http"
 # - "v5_property": Sendet die Nachricht via MQTT v5 und übergibt den Zeitstempel (RFC3339) als "User Property" (ts).
 
 server:
+  # (Optional) Die IP-Adresse, an die der Webserver gebunden werden soll (Standard: "0.0.0.0" für alle Interfaces)
+  host: "0.0.0.0"
   # Der Port für das Diagnostik-Web-Dashboard und die Health-API
   port: 8097
   # (Optional) Pfad-Präfix für die Diagnose-REST-API (Standard: "/api/v1")

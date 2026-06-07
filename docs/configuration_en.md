@@ -19,6 +19,8 @@ mode: "http"
 # - "v5_property": Sends the message via MQTT v5 and passes the timestamp (RFC3339) as a "User Property" header.
 
 server:
+  # (Optional) The IP address to bind the web server to (Default: "0.0.0.0" for all interfaces)
+  host: "0.0.0.0"
   # The port for the diagnostic web dashboard and the health API
   port: 8097
   # (Optional) Path prefix for the diagnostic REST API (Default: "/api/v1")

@@ -69,6 +69,8 @@ type HTTPConf struct {
 
 // ServerConf konfiguriert den Diagnose-Webserver.
 type ServerConf struct {
+	// Host definiert das Interface, auf dem der Webserver lauscht (Standard: 0.0.0.0 für alle IPs).
+	Host string `yaml:"host"`
 	// Port ist der Port, unter dem das Dashboard und die API erreichbar sind (Standard: 8080).
 	Port int `yaml:"port"`
 	// APIPrefix definiert das Präfix für die Diagnose-REST-API (Standard: /api/v1).
@@ -123,6 +125,9 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Server.Port == 0 {
 		cfg.Server.Port = 8080
+	}
+	if cfg.Server.Host == "" {
+		cfg.Server.Host = "0.0.0.0"
 	}
 	if cfg.Server.APIPrefix == "" {
 		cfg.Server.APIPrefix = "/api/v1"

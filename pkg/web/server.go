@@ -103,6 +103,19 @@ var staticFS embed.FS
 func StartServer(cfg *config.Config, store *storage.Store, version string, startTime time.Time) error {
 	r := gin.Default()
 
+	// CORS Middleware: Da das API Read-Only ist, erlauben wir per Default alle Anfragen
+	r.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept")
+		
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+		c.Next()
+	})
+
 	// Statische Dateien ausliefern (Go embedFS)
 	_, err := fs.Sub(staticFS, "static")
 	if err != nil {
@@ -139,7 +152,7 @@ func StartServer(cfg *config.Config, store *storage.Store, version string, start
 	r.GET(cfg.Server.APIPrefix+"/stats", GetStatsHandler(store))
 	r.GET(cfg.Server.APIPrefix+"/health", GetHealthHandler(version))
 
-	address := fmt.Sprintf(":%d", cfg.Server.Port)
+	address := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	return r.Run(address)
 }
 

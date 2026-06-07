@@ -216,15 +216,18 @@ func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
-			sizeMB := store.GetDiskSizeMB()
+			// GEPUFFERTE (noch nicht weitergeleitete) Menge messen — nicht die rohe
+			// BadgerDB-Dateigröße (die durch Value-Log-Churn der Realität nachhinkt und
+			// fälschlich Tail-Drop auslöst, obwohl real fast nichts gepuffert ist).
+			sizeMB := store.GetPendingSizeMB()
 			if sizeMB >= int64(maxDbSizeMB) {
 				if !hook.diskFull.Load() {
-					log.Printf("WARNUNG: BadgerDB Limit erreicht (%d MB / %d MB). Gehe in Read-Only Tail-Drop Modus!", sizeMB, maxDbSizeMB)
+					log.Printf("WARNUNG: Puffer-Limit erreicht (%d MB gepuffert / %d MB). Gehe in Read-Only Tail-Drop Modus!", sizeMB, maxDbSizeMB)
 					hook.diskFull.Store(true)
 				}
 			} else {
 				if hook.diskFull.Load() {
-					log.Printf("INFO: BadgerDB wieder unter Limit (%d MB / %d MB). Tail-Drop beendet.", sizeMB, maxDbSizeMB)
+					log.Printf("INFO: Puffer wieder unter Limit (%d MB gepuffert / %d MB). Tail-Drop beendet.", sizeMB, maxDbSizeMB)
 					hook.diskFull.Store(false)
 				}
 			}

@@ -24,8 +24,15 @@ type Store struct {
 func InitBadger(path string) (*Store, error) {
 	opts := badger.DefaultOptions(path)
 	// Internen Logger deaktivieren, um Log-Rauschen zu reduzieren
-	opts.Logger = nil 
-	
+	opts.Logger = nil
+	// Kleine Value-Log-Dateien (32 MB statt Default 1 GB): BadgerDB gibt gelöschten
+	// (= weitergeleiteten) Speicher erst frei, wenn eine vlog-Datei voll UND zu ≥70 %
+	// Müll ist. Mit 1-GB-Dateien wächst der Value-Log unter Last bis ~1 GB, bevor GC
+	// greift — das ließ die (an db.Size() gemessene) „Größe" fälschlich das Tail-Drop-
+	// Limit reißen, obwohl real fast nichts gepuffert war. Kleine Dateien rotieren
+	// schnell → GC kann zeitnah freigeben.
+	opts.ValueLogFileSize = 32 << 20
+
 	db, err := badger.Open(opts)
 	if err != nil {
 		return nil, err
@@ -33,9 +40,10 @@ func InitBadger(path string) (*Store, error) {
 
 	stopGC := make(chan struct{})
 
-	// Garbage Collector Goroutine
+	// Garbage Collector Goroutine (häufig, damit weitergeleitete Einträge zügig aus
+	// dem Value-Log verschwinden und die Größe der Realität folgt).
 	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
+		ticker := time.NewTicker(60 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
@@ -120,11 +128,33 @@ func (s *Store) GetSize() (int, error) {
 	return count, err
 }
 
-// GetDiskSizeMB liefert die aktuelle Größe der BadgerDB auf der Festplatte in Megabyte.
-// Berechnet wird die Summe aus LSM-Tree und Value Log Größe.
+// GetDiskSizeMB liefert die aktuelle Größe der BadgerDB auf der Festplatte in Megabyte
+// (LSM + Value Log, inkl. noch nicht per GC freigegebenem Müll). NUR fürs Dashboard —
+// NICHT fürs Tail-Drop-Limit: dieser Wert hinkt der Realität nach (Value-Log-Churn).
 func (s *Store) GetDiskSizeMB() int64 {
 	lsm, vlog := s.db.Size()
 	return (lsm + vlog) / (1024 * 1024)
+}
+
+// GetPendingSizeMB liefert die tatsächlich GEPUFFERTE (noch nicht weitergeleitete)
+// Datenmenge in Megabyte — die Summe aus Key- und Value-Größe aller LEBENDEN Einträge.
+// Maß für das Tail-Drop-Limit: weitergeleitete (gelöschte) Nachrichten zählen NICHT
+// mehr mit, unabhängig davon, ob die GC den Value-Log schon aufgeräumt hat.
+// ValueSize() kommt aus den LSM-Metadaten → kein Laden der Werte nötig.
+func (s *Store) GetPendingSizeMB() int64 {
+	var total int64
+	_ = s.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			total += int64(item.KeySize()) + item.ValueSize()
+		}
+		return nil
+	})
+	return total / (1024 * 1024)
 }
 
 // GetRecent liest die ältesten X Einträge aus der Datenbank aus,

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "mlc-dochub": {
+      "args": [
+        "-project-id",
+        "mlc2afmqttproxy"
+      ],
+      "command": "dochub-mcp"
+    }
+  }
+}

@@ -220,7 +220,10 @@ function createNodeHtml(key, val, path) {
     
     let valHtml = '';
     if (!isObj) {
-        if (typeof val === 'string') valHtml = `<span class="node-val-string">"${val}"</span>`;
+        if (typeof val === 'string') {
+            const escapedVal = val.replace(/"/g, '&quot;');
+            valHtml = `<span class="node-val-string" title="${escapedVal}">"${escapedVal}"</span>`;
+        }
         else if (typeof val === 'number') valHtml = `<span class="node-val-number">${val}</span>`;
         else if (typeof val === 'boolean') valHtml = `<span class="node-val-boolean">${val}</span>`;
         else if (val === null) valHtml = `<span class="node-val-null">null</span>`;

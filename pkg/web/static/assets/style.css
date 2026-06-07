@@ -59,6 +59,7 @@ body {
 .bg-gradient-text {
     background: linear-gradient(135deg, #60a5fa, #c084fc);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
 }
 
@@ -100,7 +101,15 @@ body {
     font-weight: 600;
 }
 
-.node-val-string { color: #a7f3d0; }
+.node-val-string { 
+    color: #a7f3d0;
+    max-width: 500px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: inline-block;
+    vertical-align: bottom;
+}
 .node-val-number { color: #fca5a5; }
 .node-val-boolean { color: #fcd34d; }
 .node-val-null { color: #94a3b8; font-style: italic; }

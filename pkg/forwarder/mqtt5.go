@@ -13,15 +13,24 @@ import (
 	"mlc2afmqttproxy/pkg/config"
 )
 
+// MQTT5Forwarder implementiert die Forwarder-Schnittstelle unter Verwendung von MQTT v5 (via Eclipse Paho v5/autopaho).
+// Er übermittelt Nachrichten an einen Upstream-Master/Cloud-Broker und sendet den historischen Zeitstempel
+// als MQTT v5 User Property ("ts"), um Payload-Injektionen zu vermeiden und das JSON unberührt zu lassen.
 type MQTT5Forwarder struct {
+	// Upstream ist die Broker-URL (z.B. tcp://cloud.example.com:1883)
 	Upstream string
+	// Rewrite enthält Umschreibregeln für das Topic
 	Rewrite  *config.TopicRewriteConf
+	// client ist der Autopaho Connection Manager für automatische Verbindungsaufrechterhaltung
 	client   *autopaho.ConnectionManager
+	// ctx ist der Kontext für asynchrone Client-Prozesse
 	ctx      context.Context
+	// cancel bricht den asynchronen Client-Prozess bei Schließen ab
 	cancel   context.CancelFunc
 }
 
-// NewMQTT5Forwarder erstellt einen neuen Paho MQTT v5 Client für den Cloud-Broker.
+// NewMQTT5Forwarder erstellt und konfiguriert einen neuen MQTT5Forwarder für Upstream-MQTT v5.
+// Konfiguriert den autopaho Connection Manager zur automatischen Wiederverbindung im Hintergrund.
 func NewMQTT5Forwarder(upstream, username, password string, rewrite *config.TopicRewriteConf) *MQTT5Forwarder {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -45,7 +54,7 @@ func NewMQTT5Forwarder(upstream, username, password string, rewrite *config.Topi
 	}
 
 	if username != "" {
-		cliCfg.ClientConfig.Router = paho.NewStandardRouter() // Optional
+		cliCfg.ClientConfig.Router = paho.NewStandardRouter()
 		cliCfg.SetUsernamePassword(username, []byte(password))
 	}
 
@@ -63,30 +72,31 @@ func NewMQTT5Forwarder(upstream, username, password string, rewrite *config.Topi
 	}
 }
 
-// Connect stellt die Initiale Verbindung zum Broker her.
+// Connect implementiert das Forwarder-Interface. Da autopaho asynchron arbeitet, ist keine blockierende Aktion nötig.
 func (f *MQTT5Forwarder) Connect() error {
 	if f.client == nil {
 		return fmt.Errorf("client not initialized")
 	}
-	// autopaho verbindet automatisch im Hintergrund
+	// autopaho verbindet sich automatisch im Hintergrund
 	return nil
 }
 
-// IsConnected prüft, ob Paho aktuell verbunden ist.
+// IsConnected prüft, ob der Connection Manager initialisiert ist.
 func (f *MQTT5Forwarder) IsConnected() bool {
 	if f.client == nil {
 		return false
 	}
-	// Falls es keine direkte Methode gibt, versuchen wir es optimistisch
 	return true 
 }
 
-// Send publiziert die Nachricht an den Upstream-Broker.
+// Send führt optional Topic-Umschreibungen aus, packt den historischen Zeitstempel
+// als MQTT v5 User Property ("ts") in die Nachricht und veröffentlicht diese mit QoS 1 (At least once).
 func (f *MQTT5Forwarder) Send(topic string, payload []byte, timestamp time.Time) error {
 	if f.client == nil {
 		return fmt.Errorf("upstream mqtt client is not connected")
 	}
 
+	// 1. Topic-Umschreibung (z.B. "zigbee2mqtt/sensor1" -> "cloud/sensor1")
 	if f.Rewrite != nil && f.Rewrite.MatchPrefix != "" {
 		if strings.HasPrefix(topic, f.Rewrite.MatchPrefix) {
 			topic = f.Rewrite.ReplaceWith + strings.TrimPrefix(topic, f.Rewrite.MatchPrefix)
@@ -103,12 +113,13 @@ func (f *MQTT5Forwarder) Send(topic string, payload []byte, timestamp time.Time)
 		Payload: payload,
 		Properties: &paho.PublishProperties{
 			User: paho.UserProperties{
+				// ts-Property anhängen zur korrekten zeitlichen Zuordnung
 				paho.UserProperty{Key: "ts", Value: tsStr},
 			},
 		},
 	}
 
-	// Publish blocking
+	// Blockierendes Veröffentlichen
 	pubResp, err := f.client.Publish(f.ctx, pb)
 	if err != nil {
 		return err
@@ -122,7 +133,7 @@ func (f *MQTT5Forwarder) Send(topic string, payload []byte, timestamp time.Time)
 	return nil
 }
 
-// Close trennt die Verbindung sauber.
+// Close trennt den MQTT 5 Client sauber ab und bricht den internen Kontext ab.
 func (f *MQTT5Forwarder) Close() {
 	if f.client != nil {
 		f.client.Disconnect(f.ctx)
@@ -131,3 +142,4 @@ func (f *MQTT5Forwarder) Close() {
 		f.cancel()
 	}
 }
+

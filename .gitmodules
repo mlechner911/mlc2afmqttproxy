@@ -1,0 +1,4 @@
+[submodule ".mlcai"]
+	path = .mlcai
+	url = mlc@nas.local:/volume1/homes/mlc/repositories/dochub/mlc2afmqttproxy-mlcai.git/
+	branch = main

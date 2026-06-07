@@ -1,9 +1,11 @@
+// Package worker implementiert eine periodische Hintergrund-Goroutine (Worker),
+// welche sequentiell die ältesten Nachrichten aus der BadgerDB ausliest,
+// sie an den Upstream-Forwarder sendet und bei Erfolg aus der DB löscht.
 package worker
 
 import (
 	"encoding/json"
 	"log"
-	"strconv"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -12,13 +14,17 @@ import (
 	"mlc2afmqttproxy/pkg/storage"
 )
 
-// Worker liest kontinuierlich aus der BadgerDB und sendet via Forwarder.
+// Worker steuert den asynchronen Prozess des Sendens gepufferter Daten.
 type Worker struct {
+	// store ist die BadgerDB-Schnittstelle
 	store *storage.Store
+	// fwd ist der aktive HTTP- oder MQTT-Upstream-Forwarder
 	fwd   forwarder.Forwarder
+	// stop signalisiert dem Worker das Einstellen der Arbeit
 	stop  chan struct{}
 }
 
+// New erzeugt eine neue Worker-Instanz, die auf der DB und dem Forwarder operiert.
 func New(s *storage.Store, f forwarder.Forwarder) *Worker {
 	return &Worker{
 		store: s,
@@ -27,6 +33,7 @@ func New(s *storage.Store, f forwarder.Forwarder) *Worker {
 	}
 }
 
+// Start startet die periodische Worker-Schleife (alle 100ms) in einer eigenen Goroutine.
 func (w *Worker) Start() {
 	go func() {
 		ticker := time.NewTicker(100 * time.Millisecond)
@@ -43,6 +50,7 @@ func (w *Worker) Start() {
 	}()
 }
 
+// Stop beendet die Worker-Goroutine und schließt den Upstream-Forwarder.
 func (w *Worker) Stop() {
 	close(w.stop)
 	if w.fwd != nil {
@@ -50,17 +58,23 @@ func (w *Worker) Stop() {
 	}
 }
 
+// processNext führt einen einzelnen Verarbeitungs- und Weiterleitungsschritt aus:
+// 1. Verbindung zum Upstream sicherstellen.
+// 2. Ältesten Puffer-Eintrag aus BadgerDB lesen.
+// 3. Zeitstempel aus dem Datenbankschlüssel (RFC3339Nano) dekodieren.
+// 4. Nachricht über Forwarder senden.
+// 5. Bei erfolgreichem Versand: Eintrag aus der BadgerDB löschen.
 func (w *Worker) processNext() {
-	// 1. Prüfen ob Upstream verbunden ist
+	// 1. Prüfen, ob der Upstream-Client verbunden ist. Wenn nicht, verbinden.
 	if !w.fwd.IsConnected() {
 		err := w.fwd.Connect()
 		if err != nil {
-			// Falls Offline, warte auf den nächsten Tick
+			// Falls der Upstream offline ist, warten wir still auf den nächsten Tick.
 			return
 		}
 	}
 
-	// 2. Ältesten Eintrag aus der DB holen
+	// 2. Den ältesten Eintrag (FIFO) aus der BadgerDB holen
 	key, val, err := w.store.PeekFirst()
 	if err != nil {
 		if err != badger.ErrKeyNotFound {
@@ -69,7 +83,7 @@ func (w *Worker) processNext() {
 		return
 	}
 
-	// 3. Payload entpacken
+	// 3. Payload aus BadgerDB deserialisieren
 	var wrapper broker.PayloadWrapper
 	if err := json.Unmarshal(val, &wrapper); err != nil {
 		log.Printf("Fehler beim Entpacken der BadgerDB-Nachricht: %v. Lösche korrupten Eintrag.", err)
@@ -77,25 +91,27 @@ func (w *Worker) processNext() {
 		return
 	}
 
-	// Parse Timestamp aus dem Key
+	// Zeitstempel aus dem Key rekonstruieren.
+	// Die Schlüssel werden in mochi.go als time.RFC3339Nano formatiert abgespeichert.
 	var ts time.Time
-	tsInt, err := strconv.ParseInt(string(key), 10, 64)
-	if err == nil {
-		ts = time.Unix(0, tsInt)
-	} else {
+	ts, err = time.Parse(time.RFC3339Nano, string(key))
+	if err != nil {
+		// Fallback auf time.Now(), falls das Schlüsselformat fehlerhaft sein sollte
 		ts = time.Now()
 	}
 
-	// 4. Versuchen zu senden
+	// 4. Nachricht an Upstream senden.
 	err = w.fwd.Send(wrapper.Topic, wrapper.Payload, ts)
 	if err != nil {
-		// Senden fehlgeschlagen, Eintrag bleibt in der DB für Retries
+		// Senden fehlgeschlagen (z.B. Verbindungsunterbrechung während des Sendens).
+		// Der Eintrag bleibt für einen erneuten Versuch (Retry) in der Datenbank liegen.
 		return
 	}
 
-	// 5. Bei Erfolg Eintrag löschen
+	// 5. Nach erfolgreichem Versand den Eintrag aus der BadgerDB löschen
 	err = w.store.Delete(key)
 	if err != nil {
 		log.Printf("Fehler beim Löschen des gepufferten Eintrags: %v", err)
 	}
 }
+

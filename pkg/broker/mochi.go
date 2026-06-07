@@ -1,3 +1,5 @@
+// Package broker initialisiert und verwaltet den lokalen, eingebetteten Mochi-MQTT-Broker
+// sowie dessen StoreHook zur persistenten Zwischenspeicherung eingehender Nachrichten.
 package broker
 
 import (
@@ -15,29 +17,41 @@ import (
 	"github.com/mochi-mqtt/server/v2/packets"
 )
 
-// PayloadWrapper umschließt das Topic und die eigentlichen Daten
+// PayloadWrapper umschließt das MQTT-Topic und die eigentlichen Nutzdaten (Payload),
+// um sie gemeinsam als ein JSON-Dokument in der BadgerDB speichern zu können.
 type PayloadWrapper struct {
+	// Das ursprüngliche MQTT-Topic
 	Topic   string `json:"topic"`
+	// Die rohen Payload-Bytes der Nachricht
 	Payload []byte `json:"payload"`
 }
 
+// StoreHook implementiert einen Mochi-MQTT Hook (HookBase), welcher alle
+// eingehenden Publish-Pakete abfängt und sie serialisiert in der BadgerDB ablegt.
 type StoreHook struct {
 	mqtt.HookBase
+	// store ist die Referenz auf den lokalen BadgerDB-Wrapper
 	store *storage.Store
 }
 
+// ID liefert den eindeutigen Bezeichner des Hooks zurück.
 func (h *StoreHook) ID() string {
 	return "store-hook"
 }
 
+// Provides prüft, welche Event-Typen dieser Hook verarbeitet.
+// In unserem Fall wird nur der OnPublish-Event abgefangen.
 func (h *StoreHook) Provides(b byte) bool {
 	return bytes.Contains([]byte{
 		mqtt.OnPublish,
 	}, []byte{b})
 }
 
+// OnPublish wird aufgerufen, wenn ein Client eine Nachricht auf dem Broker publiziert.
+// Die Nachricht wird abgefangen, in einen PayloadWrapper gepackt und mit dem
+// aktuellen Zeitstempel (für die FIFO-Abarbeitung) in der BadgerDB gespeichert.
 func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet, error) {
-	// Erstelle Schlüssel basierend auf Zeitstempel (für FIFO Sortierung in BadgerDB)
+	// Erstelle Schlüssel basierend auf UTC-Zeitstempel in RFC3339Nano (für korrekte lexikographische FIFO-Sortierung in Badger)
 	key := []byte(time.Now().UTC().Format(time.RFC3339Nano))
 
 	wrapper := PayloadWrapper{
@@ -51,7 +65,7 @@ func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packe
 		return pk, err
 	}
 
-	// Speichern in DB
+	// Speichern in BadgerDB
 	if err := h.store.Push(key, val); err != nil {
 		log.Printf("Fehler beim Speichern der MQTT-Nachricht in BadgerDB: %v", err)
 	}
@@ -60,16 +74,20 @@ func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packe
 }
 
 // StartLocalBroker startet den eingebetteten Mochi MQTT Broker.
+// Er stellt zwei Schnittstellen bereit:
+// 1. TCP Listener: Auf diesem Port (standardmäßig 1883) lauschen wir auf lokale Geräte wie Zigbee2MQTT.
+// 2. WebSocket Listener: Auf diesem Port (standardmäßig 1885) verbinden sich Web-Clients wie das Svelte Dashboard.
+// Der Registrierte StoreHook stellt sicher, dass alle Publish-Nachrichten persistent gespeichert werden.
 func StartLocalBroker(port int, wsPort int, store *storage.Store) (*mqtt.Server, error) {
 	server := mqtt.New(nil)
 
-	// Anonyme Verbindungen erlauben (nur für lokales Zigbee2MQTT)
+	// Anonyme Verbindungen erlauben (wichtig für lokale, einfache IoT-Geräte)
 	_ = server.AddHook(new(auth.AllowHook), nil)
 
-	// Hook für BadgerDB Registrieren
+	// Hook für die BadgerDB-Pufferung registrieren
 	_ = server.AddHook(&StoreHook{store: store}, nil)
 
-	// Lokaler TCP Listener, auf den Zigbee2MQTT pusht
+	// Lokaler TCP Listener einrichten
 	address := fmt.Sprintf(":%d", port)
 	err := server.AddListener(listeners.NewTCP(listeners.Config{
 		ID:      "tcp-local",
@@ -79,7 +97,7 @@ func StartLocalBroker(port int, wsPort int, store *storage.Store) (*mqtt.Server,
 		return nil, err
 	}
 
-	// Lokaler WebSocket Listener für das Live Dashboard
+	// Lokaler WebSocket Listener für das Live Dashboard einrichten
 	wsAddress := fmt.Sprintf(":%d", wsPort)
 	err = server.AddListener(listeners.NewWebsocket(listeners.Config{
 		ID:      "ws-local",
@@ -89,6 +107,7 @@ func StartLocalBroker(port int, wsPort int, store *storage.Store) (*mqtt.Server,
 		return nil, err
 	}
 
+	// Server asynchron starten
 	go func() {
 		log.Printf("Starte lokalen Mochi Broker auf %s", address)
 		err := server.Serve()
@@ -99,3 +118,4 @@ func StartLocalBroker(port int, wsPort int, store *storage.Store) (*mqtt.Server,
 
 	return server, nil
 }
+

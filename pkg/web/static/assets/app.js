@@ -128,13 +128,33 @@ function connectMQTT() {
 }
 
 function handlePublish(data) {
-    let offset = 2; // Fixed header simplified
+    let offset = 1; // Skip Type & Flags byte
+    
+    // Decode Remaining Length (1-4 bytes)
+    let multiplier = 1;
+    let remainingLength = 0;
+    let digit = 0;
+    do {
+        digit = data[offset++];
+        remainingLength += (digit & 127) * multiplier;
+        multiplier *= 128;
+    } while ((digit & 128) !== 0);
+    
+    // Read Topic Length
     const topicLen = (data[offset] << 8) | data[offset+1];
     offset += 2;
     
+    // Read Topic
     const topic = new TextDecoder().decode(data.slice(offset, offset + topicLen));
     offset += topicLen;
     
+    // Check QoS from first byte (data[0])
+    const qos = (data[0] & 0x06) >> 1;
+    if (qos > 0) {
+        offset += 2; // Skip Packet Identifier
+    }
+    
+    // Remaining bytes are payload
     const payloadStr = new TextDecoder().decode(data.slice(offset));
     
     let parsedPayload;

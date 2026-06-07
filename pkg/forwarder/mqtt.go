@@ -1,91 +1,117 @@
 package forwarder
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
-	paho "github.com/eclipse/paho.mqtt.golang"
+	"github.com/eclipse/paho.golang/autopaho"
+	"github.com/eclipse/paho.golang/paho"
 	"mlc2afmqttproxy/pkg/config"
 )
 
-// MQTTForwarder implementiert die Forwarder-Schnittstelle unter Verwendung von MQTT 3.1.1 (via Eclipse Paho).
+// MQTTForwarder implementiert die Forwarder-Schnittstelle unter Verwendung von MQTT 5 (via Eclipse autopaho).
 // Er leitet Nachrichten an einen Upstream-Master/Cloud-Broker weiter und kann optional
-// Zeitstempel in das JSON injizieren oder Topics umschreiben.
+// Zeitstempel in das JSON injizieren oder als MQTT 5 User Properties mitschicken.
 type MQTTForwarder struct {
 	// Upstream ist die Broker-URL (z.B. tcp://cloud.example.com:1883)
 	Upstream       string
-	// TimestampMode definiert, wie mit dem Zeitstempel verfahren wird ("none", "json_inject")
+	// TimestampMode definiert, wie mit dem Zeitstempel verfahren wird ("none", "json_inject", "v5_property")
 	TimestampMode  string
-	// TimestampField ist der Name des Schlüssels bei "json_inject"
+	// TimestampField ist der Name des Schlüssels bei "json_inject" oder "v5_property"
 	TimestampField string
 	// Rewrite enthält Umschreibregeln für das Topic
 	Rewrite        *config.TopicRewriteConf
-	// client ist der Eclipse Paho MQTT v3 Client
-	client         paho.Client
+	
+	// connManager verwaltet die automatische Verbindung (Reconnects etc.)
+	connManager    *autopaho.ConnectionManager
+	
+	// username und password für Connect()
+	username string
+	password string
 }
 
 // NewMQTTForwarder erstellt und konfiguriert einen neuen MQTTForwarder für Upstream-MQTT.
-// Es wird AutoReconnect aktiviert und Verbindungs-Events werden geloggt.
 func NewMQTTForwarder(upstream, username, password, timestampMode, timestampField string, rewrite *config.TopicRewriteConf) *MQTTForwarder {
-	opts := paho.NewClientOptions()
-	opts.AddBroker(upstream)
-	opts.SetClientID("mlc2af-proxy-forwarder") // Eindeutige Client-ID für den Upstream-Broker
-	
-	if username != "" {
-		opts.SetUsername(username)
-	}
-	if password != "" {
-		opts.SetPassword(password)
-	}
-
-	// Automatischer Reconnect wird von Paho im Hintergrund abgewickelt
-	opts.SetAutoReconnect(true)
-	opts.SetOnConnectHandler(func(c paho.Client) {
-		log.Printf("[MQTT-Upstream] Erfolgreich verbunden mit %s", upstream)
-	})
-	opts.SetConnectionLostHandler(func(c paho.Client, err error) {
-		log.Printf("[MQTT-Upstream] Verbindung verloren: %v", err)
-	})
-
 	return &MQTTForwarder{
 		Upstream:       upstream,
+		username:       username,
+		password:       password,
 		TimestampMode:  timestampMode,
 		TimestampField: timestampField,
 		Rewrite:        rewrite,
-		client:         paho.NewClient(opts),
 	}
 }
 
-// Connect baut die initiale Verbindung zum Upstream-Broker auf. Blockiert bis zur Verbindung oder bis zum Fehler.
+// Connect baut die initiale Verbindung zum Upstream-Broker auf.
 func (f *MQTTForwarder) Connect() error {
-	token := f.client.Connect()
-	token.Wait()
-	if token.Error() != nil {
-		return token.Error()
+	u, err := url.Parse(f.Upstream)
+	if err != nil {
+		return fmt.Errorf("ungültige Upstream-URL %s: %v", f.Upstream, err)
 	}
+
+	clientConfig := autopaho.ClientConfig{
+		ServerUrls: []*url.URL{u},
+		KeepAlive:  20,
+		CleanStartOnInitialConnection: false,
+		SessionExpiryInterval:         0xFFFFFFFF,
+		OnConnectionUp: func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
+			log.Printf("[MQTT-Upstream] Erfolgreich verbunden mit %s (MQTT 5)", f.Upstream)
+		},
+		OnConnectError: func(err error) {
+			log.Printf("[MQTT-Upstream] Verbindungsfehler: %v", err)
+		},
+		ClientConfig: paho.ClientConfig{
+			ClientID: "mlc2af-proxy-forwarder",
+		},
+	}
+
+	if f.username != "" {
+		clientConfig.SetUsernamePassword(f.username, []byte(f.password))
+	}
+
+	cm, err := autopaho.NewConnection(context.Background(), clientConfig)
+	if err != nil {
+		return err
+	}
+
+	f.connManager = cm
+	
+	// Wait for the connection to be up
+	err = cm.AwaitConnection(context.Background())
+	if err != nil {
+		return err
+	}
+	
 	return nil
 }
 
-// IsConnected prüft den aktuellen Verbindungsstatus des Paho Clients.
+// IsConnected prüft den aktuellen Verbindungsstatus.
 func (f *MQTTForwarder) IsConnected() bool {
-	if f.client == nil {
+	if f.connManager == nil {
 		return false
 	}
-	return f.client.IsConnectionOpen() || f.client.IsConnected()
+	return true
 }
 
-// Send führt optional Topic-Umschreibungen aus, injiziert bei Bedarf den historischen Zeitstempel
-// in ein JSON-Payload (sofern konfiguriert und der Key fehlt) und sendet die Nachricht mit QoS 1 (At least once)
-// an den Upstream-Broker.
+// Send führt optional Topic-Umschreibungen aus, verarbeitet den Zeitstempel
+// und sendet die Nachricht mit QoS 1 an den Upstream-Broker.
 func (f *MQTTForwarder) Send(topic string, payload []byte, timestamp time.Time) error {
-	if !f.IsConnected() {
-		return fmt.Errorf("upstream mqtt client is not connected")
+	if f.connManager == nil {
+		return fmt.Errorf("upstream mqtt client is not initialized")
 	}
 
-	// 1. Topic-Umschreibung (z.B. "zigbee2mqtt/sensor1" -> "cloud/sensor1")
+	// Vorabprüfung auf Wildcards (verboten beim Publizieren)
+	if strings.ContainsAny(topic, "+#") {
+		return &PermanentError{Err: fmt.Errorf("invalid topic contains wildcard: %s", topic)}
+	}
+
+	// 1. Topic-Umschreibung
 	if f.Rewrite != nil && f.Rewrite.MatchPrefix != "" {
 		if strings.HasPrefix(topic, f.Rewrite.MatchPrefix) {
 			topic = f.Rewrite.ReplaceWith + strings.TrimPrefix(topic, f.Rewrite.MatchPrefix)
@@ -93,13 +119,13 @@ func (f *MQTTForwarder) Send(topic string, payload []byte, timestamp time.Time) 
 	}
 
 	finalPayload := payload
+	var userProps []paho.UserProperty
 
-	// 2. Zeitstempel-Injektion in das JSON-Payload ("json_inject")
-	if f.TimestampMode == "json_inject" {
+	// 2. Zeitstempel-Behandlung
+	switch f.TimestampMode {
+	case "json_inject":
 		var data map[string]any
-		// Versuche Payload als JSON zu parsen
 		if err := json.Unmarshal(payload, &data); err == nil {
-			// "Inject if absent": Überschreibe niemals einen existierenden Wert im JSON
 			if _, exists := data[f.TimestampField]; !exists {
 				data[f.TimestampField] = timestamp.UnixMilli()
 				if newPayload, err := json.Marshal(data); err == nil {
@@ -107,24 +133,44 @@ func (f *MQTTForwarder) Send(topic string, payload []byte, timestamp time.Time) 
 				}
 			}
 		}
+	case "v5_property":
+		// Bei v5_property packen wir den Zeitstempel in den MQTT 5 Header
+		userProps = append(userProps, paho.UserProperty{
+			Key:   f.TimestampField,
+			Value: strconv.FormatInt(timestamp.UnixMilli(), 10),
+		})
 	}
 
-	// 3. Veröffentlichen mit QoS 1 (Mindestens einmalige Zustellung)
-	token := f.client.Publish(topic, 1, false, finalPayload)
-	token.Wait()
-	
-	if token.Error() != nil {
-		return token.Error()
+	// 3. Veröffentlichen mit QoS 1
+	msg := &paho.Publish{
+		Topic:   topic,
+		QoS:     1,
+		Payload: finalPayload,
 	}
 
-	log.Printf("[MQTT-Upstream] Erfolgreich gesendet: Topic='%s', %d bytes", topic, len(finalPayload))
+	if len(userProps) > 0 {
+		msg.Properties = &paho.PublishProperties{
+			User: userProps,
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := f.connManager.Publish(ctx, msg)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("[MQTT-Upstream] Erfolgreich gesendet (MQTT5): Topic='%s', %d bytes", topic, len(finalPayload))
 	return nil
 }
 
-// Close trennt die Verbindung zum Upstream-Broker sauber (mit 250ms Quiesce-Zeit).
+// Close trennt die Verbindung zum Upstream-Broker.
 func (f *MQTTForwarder) Close() {
-	if f.client != nil && f.client.IsConnected() {
-		f.client.Disconnect(250)
+	if f.connManager != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		f.connManager.Disconnect(ctx)
 	}
 }
-

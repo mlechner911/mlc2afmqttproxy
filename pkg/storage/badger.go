@@ -120,6 +120,13 @@ func (s *Store) GetSize() (int, error) {
 	return count, err
 }
 
+// GetDiskSizeMB liefert die aktuelle Größe der BadgerDB auf der Festplatte in Megabyte.
+// Berechnet wird die Summe aus LSM-Tree und Value Log Größe.
+func (s *Store) GetDiskSizeMB() int64 {
+	lsm, vlog := s.db.Size()
+	return (lsm + vlog) / (1024 * 1024)
+}
+
 // GetRecent liest die ältesten X Einträge aus der Datenbank aus,
 // decodiert sie und hängt den Schlüssel als "_timestamp" an (für das Web-Dashboard).
 func (s *Store) GetRecent(limit int) ([]map[string]any, error) {

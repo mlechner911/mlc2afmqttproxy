@@ -18,16 +18,23 @@ mode: "http"
 # - "v5_property": Sendet die Nachricht via MQTT v5 und übergibt den Zeitstempel (RFC3339) als "User Property" (ts).
 
 server:
+  # (Optional) Wenn false, wird das Web-Dashboard komplett deaktiviert (Standard: true)
+  enable: true
   # (Optional) Die IP-Adresse, an die der Webserver gebunden werden soll (Standard: "0.0.0.0" für alle Interfaces)
   host: "0.0.0.0"
   # Der Port für das Diagnostik-Web-Dashboard und die Health-API
   port: 8097
   # (Optional) Pfad-Präfix für die Diagnose-REST-API (Standard: "/api/v1")
   api_prefix: "/api/v1"
+  # (Optional) Basic Auth Schutz für das komplette Web-Dashboard und die API
+  # username: "admin"
+  # password: "secret-password"
 
 storage:
   # Pfad, in dem die BadgerDB ihre Daten ablegt (Store & Forward Puffer)
   path: "./data"
+  # Maximale Größe der Datenbank in Megabyte (Default 1024)
+  max_size_mb: 1024
 
 mqtt:
   # Der lokale Port, auf dem der eingebettete Mochi-Broker für Zigbee2MQTT lauscht
@@ -37,10 +44,19 @@ mqtt:
   username: "user"
   password: "password"
   # Wie Zeitstempel an den MQTT Upstream gesendet werden (none, json_inject, v5_property)
-  timestamp_mode: "json_inject"
+  timestamp_mode: "v5_property"
   # Name des injizierten Zeitstempel-Feldes im JSON (Standard: "_ts").
   # Es wird "inject if absent" genutzt, d.h. wenn dieses Feld schon existiert, bleibt es unangetastet!
   timestamp_field: "_ts"
+  # Aktiviert die Nutzung von MQTT 5 Topic Aliases zur massiven Reduktion der übertragenen Datenmenge
+  topic_alias: true
+  
+  # Dedupliziert exakt gleiche Nachrichten auf dem gleichen Topic in diesem Zeitfenster (in ms).
+  deduplicate_interval_ms: 1000
+  # Smart JSON Deduplication: Diese Keys werden beim Byte-Vergleich ignoriert.
+  deduplicate_ignore_keys:
+    - last_seen
+    - linkquality
   
   # Optionale Rewrite-Policy für das Base-Topic (z.B. umleiten auf einen Namespace)
   topic_rewrite:

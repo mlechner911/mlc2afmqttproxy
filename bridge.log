@@ -1,6 +1,0 @@
-2026/06/06 17:45:59 Starting MQTT bridge from master tcp://localhost:1883 to slave tcp://localhost:1884 on topic test/#
-2026/06/06 17:45:59 Connected to slave broker: tcp://localhost:1884
-2026/06/06 17:45:59 Connected to master broker: tcp://localhost:1883
-2026/06/06 17:45:59 Subscribed to master broker topic: test/#
-2026/06/06 17:46:01 Forwarding message: Topic: test/proxy
-2026/06/06 17:46:02 Shutting down MQTT bridge...

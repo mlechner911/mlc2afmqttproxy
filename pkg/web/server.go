@@ -97,11 +97,19 @@ func GetConfigHandler(cfg *config.Config, startTime time.Time) gin.HandlerFunc {
 //go:embed static/*
 var staticFS embed.FS
 
-// StartServer initialisiert und startet den Diagnose-Webserver.
+// StartServer initialisiert den Diagnose-Webserver.
 // Registriert Middleware für statische Dateien, leitet WebSocket-Verbindungen
 // an den lokalen Mochi-MQTT Broker weiter und registriert die JSON-APIs.
-func StartServer(cfg *config.Config, store *storage.Store, version string, startTime time.Time) error {
+// Startet den Server in einer Goroutine und gibt das *http.Server Objekt für Graceful Shutdown zurück.
+func StartServer(cfg *config.Config, store *storage.Store, version string, startTime time.Time) *http.Server {
 	r := gin.Default()
+
+	// Optional: HTTP Basic Auth für das Dashboard und die API aktivieren
+	if cfg.Server.Username != "" && cfg.Server.Password != "" {
+		r.Use(gin.BasicAuth(gin.Accounts{
+			cfg.Server.Username: cfg.Server.Password,
+		}))
+	}
 
 	// CORS Middleware: Da das API Read-Only ist, erlauben wir per Default alle Anfragen
 	r.Use(func(c *gin.Context) {
@@ -153,6 +161,17 @@ func StartServer(cfg *config.Config, store *storage.Store, version string, start
 	r.GET(cfg.Server.APIPrefix+"/health", GetHealthHandler(version))
 
 	address := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	return r.Run(address)
+	srv := &http.Server{
+		Addr:    address,
+		Handler: r,
+	}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("Fehler beim Webserver: %v\n", err)
+		}
+	}()
+
+	return srv
 }
 

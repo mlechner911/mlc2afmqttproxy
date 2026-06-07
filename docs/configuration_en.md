@@ -19,16 +19,23 @@ mode: "http"
 # - "v5_property": Sends the message via MQTT v5 and passes the timestamp (RFC3339) as a "User Property" header.
 
 server:
-  # (Optional) The IP address to bind the web server to (Default: "0.0.0.0" for all interfaces)
+  # (Optional) If false, the web dashboard is completely disabled (Default: true)
+  enable: true
+  # (Optional) The IP address the web server should bind to (Default: "0.0.0.0" for all interfaces)
   host: "0.0.0.0"
   # The port for the diagnostic web dashboard and the health API
   port: 8097
   # (Optional) Path prefix for the diagnostic REST API (Default: "/api/v1")
   api_prefix: "/api/v1"
+  # (Optional) Basic Auth protection for the entire web dashboard and API
+  # username: "admin"
+  # password: "secret-password"
 
 storage:
   # Path where BadgerDB stores its data (Store & Forward buffer)
   path: "./data"
+  # Maximum database size in megabytes
+  max_size_mb: 1024
 
 mqtt:
   # The local port on which the embedded Mochi broker listens for Zigbee2MQTT
@@ -38,10 +45,19 @@ mqtt:
   username: "user"
   password: "password"
   # How timestamps are sent to the MQTT upstream (none, json_inject, v5_property)
-  timestamp_mode: "json_inject"
-  # Name of the injected timestamp field in the JSON (Default: "_ts").
-  # It uses "inject if absent", meaning if this field already exists, it remains untouched!
+  timestamp_mode: "v5_property"
+  # Name of the injected timestamp field in JSON (Default: "_ts").
+  # Uses "inject if absent" meaning existing fields are left untouched!
   timestamp_field: "_ts"
+  # Enables the use of MQTT 5 Topic Aliases to massively reduce the amount of transmitted data
+  topic_alias: true
+
+  # Deduplicates exactly identical messages on the same topic within this time window (in ms).
+  deduplicate_interval_ms: 1000
+  # Smart JSON Deduplication: These keys are ignored during byte comparison.
+  deduplicate_ignore_keys:
+    - last_seen
+    - linkquality
   
   # Optional topic rewrite policy (e.g. redirect to a namespace)
   topic_rewrite:

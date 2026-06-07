@@ -5,6 +5,7 @@ package worker
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"time"
 
@@ -150,6 +151,15 @@ func (w *Worker) processNext() (bool, error) {
 	// 5. Nachricht an Upstream senden
 	err = w.fwd.Send(wrapper.Topic, wrapper.Payload, ts)
 	if err != nil {
+		log.Printf("[Worker] Fehler beim Senden an Upstream: %v", err)
+		
+		var permErr *forwarder.PermanentError
+		if errors.As(err, &permErr) {
+			log.Printf("[Worker] Nachricht dauerhaft abgelehnt (Poison Message), verwerfe Eintrag für Topic: %s", wrapper.Topic)
+			w.store.Delete(key)
+			return true, nil // Gilt als "verarbeitet", Queue geht weiter
+		}
+		
 		metrics.IncForwardFailed()
 		w.handleFailure()
 		return false, err

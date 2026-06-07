@@ -4,6 +4,7 @@ package config
 
 import (
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -29,6 +30,8 @@ type Config struct {
 type StorageConf struct {
 	// Path definiert das Verzeichnis, in dem die BadgerDB-Dateien abgelegt werden.
 	Path string `yaml:"path"`
+	// MaxSizeMB definiert die maximale Größe der Datenbank in Megabyte (Tail Drop Limit).
+	MaxSizeMB int `yaml:"max_size_mb"`
 }
 
 // MQTTConf enthält Konfigurationen für die MQTT-Listener sowie die MQTT-Upstream-Verbindung.
@@ -43,6 +46,8 @@ type MQTTConf struct {
 	Username      string `yaml:"username"`
 	// Password ist das optionale Passwort für den Upstream-Broker.
 	Password      string `yaml:"password"`
+	// TopicAlias aktiviert die Nutzung von MQTT 5 Topic Aliases zur Bandbreiteneinsparung.
+	TopicAlias    bool   `yaml:"topic_alias"`
 	// TimestampMode steuert, wie Zeitstempel übertragen werden ("none", "json_inject", "v5_property").
 	TimestampMode  string            `yaml:"timestamp_mode"`
 	// TimestampField definiert den JSON-Key beim Modus "json_inject" (Standard: "_ts").
@@ -85,12 +90,18 @@ type HTTPConf struct {
 
 // ServerConf konfiguriert den Diagnose-Webserver.
 type ServerConf struct {
+	// Enable steuert, ob der Webserver überhaupt gestartet werden soll (Standard: true).
+	Enable bool `yaml:"enable"`
 	// Host definiert das Interface, auf dem der Webserver lauscht (Standard: 0.0.0.0 für alle IPs).
 	Host string `yaml:"host"`
 	// Port ist der Port, unter dem das Dashboard und die API erreichbar sind (Standard: 8080).
 	Port int `yaml:"port"`
 	// APIPrefix definiert das Präfix für die Diagnose-REST-API (Standard: /api/v1).
 	APIPrefix string `yaml:"api_prefix"`
+	// Username ist der optionale Benutzername für HTTP Basic Auth (Dashboard & API).
+	Username string `yaml:"username"`
+	// Password ist das optionale Passwort für HTTP Basic Auth.
+	Password string `yaml:"password"`
 }
 
 // WorkerConf enthält Einstellungen für den Forward-Worker.
@@ -127,6 +138,9 @@ func LoadConfig(path string) (*Config, error) {
 	if cfg.Storage.Path == "" {
 		cfg.Storage.Path = "./data"
 	}
+	if cfg.Storage.MaxSizeMB == 0 {
+		cfg.Storage.MaxSizeMB = 1024
+	}
 	if cfg.MQTT.LocalPort == 0 {
 		cfg.MQTT.LocalPort = 1883
 	}
@@ -142,6 +156,11 @@ func LoadConfig(path string) (*Config, error) {
 	if cfg.Server.Port == 0 {
 		cfg.Server.Port = 8080
 	}
+	// Default: Webserver aktivieren, falls nicht explizit in der YAML auf "enable: false" gesetzt.
+	if !strings.Contains(string(data), "enable: false") {
+		cfg.Server.Enable = true
+	}
+
 	if cfg.Server.Host == "" {
 		cfg.Server.Host = "0.0.0.0"
 	}

@@ -5,7 +5,7 @@
         "-project-id",
         "mlc2afmqttproxy"
       ],
-      "command": "dochub-mcp"
+      "command": "/home/mlc/.local/bin/dochub-mcp"
     }
   }
 }

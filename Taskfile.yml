@@ -1,9 +1,9 @@
 version: '3'
 
 vars:
-  # Versucht die Git-Version zu lesen, Fallback ist "v0.1.0-dev"
+  # Versucht die Git-Version zu lesen, Fallback ist "v1.0.2"
   VERSION:
-    sh: git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0-dev"
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "v1.0.2"
   LDFLAGS: "-X 'main.Version={{.VERSION}}'"
 
 tasks:

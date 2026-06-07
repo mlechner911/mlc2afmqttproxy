@@ -2,10 +2,18 @@
 mode: "mqtt"
 
 server:
+  # Wenn false, wird das Web-Dashboard und die API (Port 8097) komplett deaktiviert.
+  enable: true
   port: 8097
+  # (Optional) HTTP Basic Auth für das Dashboard und die API:
+  # username: "admin"
+  # password: "secret-password"
 
 storage:
   path: "./data"
+  # Maximale Größe der Datenbank in Megabyte. Ist dieses Limit erreicht, 
+  # blockt der Proxy alle einkommenden Nachrichten ("Tail Drop"), um die Festplatte zu schützen.
+  max_size_mb: 1024
 
 mqtt:
   # Lokaler Broker, an den Zigbee2MQTT publiziert (z2m mqtt.server hierauf zeigen).
@@ -17,8 +25,10 @@ mqtt:
   username: "edge-proxy"
   # MUSS einem Eintrag in INGEST_TOKENS des Backends entsprechen (deploy/.env).
   password: "60b03cfaddba96981b03490549f707a00332573bc84091b792d42687a1b0bac6"
+  # Nutzt MQTT 5 Topic Aliases zur massiven Reduktion der übertragenen Datenmenge.
+  topic_alias: true
   # Historische Zeitstempel mitschicken (Spätdaten/Catch-Up): JSON-Feld `ts` (ms).
-  timestamp_mode: "json_inject"
+  timestamp_mode: "v5_property"
   # Dedupliziert exakt gleiche Nachrichten auf dem gleichen Topic in diesem Zeitfenster (in ms).
   # Hilft massiv gegen Zigbee-Broadcast-Spamming. (0 = deaktiviert).
   deduplicate_interval_ms: 1000

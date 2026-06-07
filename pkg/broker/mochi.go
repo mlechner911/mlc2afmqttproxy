@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"mlc2afmqttproxy/pkg/config"
@@ -52,6 +53,9 @@ type StoreHook struct {
 	
 	mu       sync.Mutex
 	lastSeen map[string]lastMsg
+
+	// diskFull wird auf true gesetzt, wenn die BadgerDB das Limit erreicht hat
+	diskFull atomic.Bool
 }
 
 // ID liefert den eindeutigen Bezeichner des Hooks zurück.
@@ -72,6 +76,12 @@ func (h *StoreHook) Provides(b byte) bool {
 // aktuellen Zeitstempel (für die FIFO-Abarbeitung) in der BadgerDB gespeichert.
 func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet, error) {
 	metrics.IncReceived()
+
+	// "Tail Drop": Wenn die Festplatte (DB) voll ist, verwerfen wir sofort alle neuen Nachrichten.
+	if h.diskFull.Load() {
+		// Verwerfen, ohne zu speichern oder weiterzuleiten
+		return pk, nil
+	}
 
 	topic := pk.TopicName
 
@@ -184,20 +194,42 @@ func isPayloadEffectivelyEqual(a, b []byte, ignoreKeys []string) bool {
 // 1. TCP Listener: Auf diesem Port (standardmäßig 1883) lauschen wir auf lokale Geräte wie Zigbee2MQTT.
 // 2. WebSocket Listener: Auf diesem Port (standardmäßig 1885) verbinden sich Web-Clients wie das Svelte Dashboard.
 // Der Registrierte StoreHook stellt sicher, dass alle Publish-Nachrichten persistent gespeichert werden.
-func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config.FilterConf, dedupInterval int, dedupIgnoreKeys []string) (*mqtt.Server, error) {
+func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config.FilterConf, dedupInterval int, dedupIgnoreKeys []string, maxDbSizeMB int) (*mqtt.Server, error) {
 	server := mqtt.New(nil)
 
 	// Anonyme Verbindungen erlauben (wichtig für lokale, einfache IoT-Geräte)
 	_ = server.AddHook(new(auth.AllowHook), nil)
 
-	// Hook für die BadgerDB-Pufferung registrieren
-	_ = server.AddHook(&StoreHook{
+	hook := &StoreHook{
 		store:           store,
 		filter:          filter,
 		dedupInterval:   dedupInterval,
 		dedupIgnoreKeys: dedupIgnoreKeys,
 		lastSeen:        make(map[string]lastMsg),
-	}, nil)
+	}
+	
+	// Hook für die BadgerDB-Pufferung registrieren
+	_ = server.AddHook(hook, nil)
+
+	// Goroutine für Disk Full Überwachung (Tail Drop)
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			sizeMB := store.GetDiskSizeMB()
+			if sizeMB >= int64(maxDbSizeMB) {
+				if !hook.diskFull.Load() {
+					log.Printf("WARNUNG: BadgerDB Limit erreicht (%d MB / %d MB). Gehe in Read-Only Tail-Drop Modus!", sizeMB, maxDbSizeMB)
+					hook.diskFull.Store(true)
+				}
+			} else {
+				if hook.diskFull.Load() {
+					log.Printf("INFO: BadgerDB wieder unter Limit (%d MB / %d MB). Tail-Drop beendet.", sizeMB, maxDbSizeMB)
+					hook.diskFull.Store(false)
+				}
+			}
+		}
+	}()
 
 	// Lokaler TCP Listener einrichten
 	address := fmt.Sprintf(":%d", port)

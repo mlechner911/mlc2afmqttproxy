@@ -23,3 +23,13 @@ type Forwarder interface {
 	Close()
 }
 
+// PermanentError signalisiert, dass eine Nachricht aufgrund ihrer Beschaffenheit
+// vom Upstream-Dienst dauerhaft abgelehnt wird (z.B. ungültiges Topic)
+// und nicht erneut gesendet werden sollte (Vermeidung einer Poison-Message-Endlosschleife).
+type PermanentError struct {
+	Err error
+}
+
+func (e *PermanentError) Error() string {
+	return e.Err.Error()
+}

@@ -1,10 +1,12 @@
 # MLC Edge Proxy
 
-[🇩🇪 Auf Deutsch lesen](README.md)
-An edge proxy for IoT sensors (e.g., Zigbee2MQTT) that ensures lossless telemetry transmission to the cloud on unreliable connections (e.g., edge gateways with cellular/poor WiFi).
+![MLC Edge Proxy Banner](docs/banner.png)
+
+[🇩🇪 Lies dies auf Deutsch](README.md)
+An Edge Proxy for IoT sensors (e.g. Zigbee2MQTT) that ensures lossless telemetry transmission to the cloud over unreliable connections (e.g. Edge Gateways with cellular/poor WiFi).
 
 ## What does the proxy do?
-The **MLC Edge Proxy** is a lightweight, Go-based local MQTT broker (built on Mochi-MQTT) that implements a "store-and-forward" architecture. It is specifically designed to run on edge devices (e.g., a local Raspberry Pi hosting Zigbee2MQTT). The proxy intercepts this data and writes it locally and extremely fast to disk (BadgerDB). An independent background worker then attempts to forward this data to the cloud.
+The **MLC Edge Proxy** is a lightweight, Go-based local MQTT broker (built on Mochi-MQTT) that implements a "store-and-forward" architecture. It is specifically designed to run on edge devices (e.g., a local Raspberry Pi hosting Zigbee2MQTT). The proxy intercepts this data and writes it locally and extremely fast to a local database on disk. An independent background worker then attempts to forward this data to the cloud.
 
 ### Why use Zigbee sensors in the first place?
 Especially in industrial IoT or edge environments, Zigbee sensors offer enormous advantages:
@@ -13,22 +15,38 @@ Especially in industrial IoT or edge environments, Zigbee sensors offer enormous
 3. **Cost & Variety:** There is a massive selection of extremely affordable and reliable sensors from various manufacturers, all working seamlessly together cross-vendor thanks to *Zigbee2MQTT*.
 
 > [!IMPORTANT]
-> **The main advantage of this solution:** No data can be lost, even in the event of a complete internet or network outage. The only requirement is that this proxy and the data source (e.g., Zigbee2MQTT) run on the same server, which is protected by a UPS (Uninterruptible Power Supply). Since the proxy is extremely resource-efficient, a very small computer like a Raspberry Pi is completely sufficient for this. When the internet connection is restored, all cached data is transmitted to the cloud with the correct historical timestamps.
+> **The main advantage of this solution:** No data can be lost, even during a complete internet or network outage. The only requirement is that this proxy and the data source (e.g. Zigbee2MQTT) run on the same server, protected by a UPS (Uninterruptible Power Supply). Since the proxy is extremely resource-efficient, a very small computer like a Raspberry Pi is completely sufficient. Once the internet returns, all cached data is transmitted to the cloud with the correct historical timestamps.
+
+## Why use this Proxy?
+
+Whether you are forwarding IoT data centrally to the cloud or integrating it into a local Smart Home system – this proxy solves several core architectural problems at the network edge:
+
+1. **Zero Data Loss (Store & Forward):**
+   Internet or home WiFi goes down? No problem. The proxy buffers all sensor data locally in a blazing-fast database. Once the connection is restored, all data is submitted seamlessly without missing a beat.
+2. **Bandwidth Reduction & Cloud Relief (Edge Computing):**
+   Many sensors (e.g., smart meters) send exactly the same value every second. The *Smart JSON Deduplication* discards redundant data locally at the edge before it even hits the network. This not only saves gigabytes of mobile data volume but also significantly relieves your backend databases.
+3. **Perfect for Home Assistant & Cloud:**
+   Thanks to the Time-Travel feature (`timestamp_mode`), exact historical timestamps are injected during transmission. Backend systems or *Home Assistant* instances can thus record the sensor value at its true, original time, instead of logging thousands of values with a fake "now" timestamp after a long offline period.
+4. **Protection against "Poison Messages":**
+   Cloud brokers (and occasionally local brokers) sometimes reject invalid topics or payloads. Instead of dying in an infinite reconnect loop, the proxy detects this using MQTT 5 Reason Codes and preemptively purges the defective message from the queue so the rest of the data stream can continue to flow unhindered.
 
 ### Core Features
-*   **Efficiency:** Uses BadgerDB for extremely fast, local caching.
+*   **Efficiency:** Uses an embedded database for extremely fast, local caching.
 *   **Resilience:** The proxy steps in when the master broker is offline.
 *   **Live Dashboard:** Integrated, reactive MQTT Tree Explorer (Websocket-based, Svelte) on port `8097`.
-*   **Mochi-MQTT Broker:** Embedded, resource-efficient MQTT broker for local devices.
-*   **Protocol Support:** Full support for MQTT v3.1.1, MQTT v4, and MQTT v5.
-  * **Outbound (Upstream & Bridge)**: Intentionally uses **MQTT v3.1.1** for maximum compatibility, as the majority of cloud brokers (like AWS IoT Core) prefer this standard for data ingestion.
-* **Offline Catch-Up (Time-Travel)**: The exact historical timestamps (`ts`) of the sensor events are injected during transmission. This prevents skewed graphs when the internet returns.
+*   **Mochi-MQTT Broker:** Embedded, resource-efficient MQTT Broker for local devices.
+*   **Protocol Support:** Full support for MQTT v3.1.1, MQTT v4, and **MQTT v5**.
+  * **Outgoing (Upstream & Bridge)**: Uses either MQTT v3.1.1 for maximum compatibility, or natively uses **MQTT v5** to support modern features like User Properties.
+* **Offline Catch-Up (Time-Travel)**: The exact historical timestamps (`ts`) of sensor events are submitted retrospectively. This prevents distorted graphs when the internet connection is restored.
+* **Smart JSON Deduplication (Debouncing):** Prevents "nervous" sensors from flooding the network. Filters identical payloads within a configurable time window. Supports ignore lists (`deduplicate_ignore_keys`) to safely skip dynamic keys (like `last_seen`, `linkquality`) during byte comparison.
+* **Poison Message Protection:** The background worker actively detects "poison" messages (e.g., publish attempts on wildcard topics like `+/#` or server `Reason Codes != 0`) and safely purges them from the local database. This effectively prevents head-of-line blocking and infinite reconnect loops.
+* **Topic Aliases (MQTT 5):** Drastically reduces bandwidth consumption by replacing long topic strings (e.g., `zigbee2mqtt/0xf074bffffe91bd75`) with a simple integer alias after the first transmission. The proxy automatically detects upstream server restarts and safely resynchronizes aliases.
 * **Two Upstream Modes**: 
   * `http`: Maps flat Zigbee JSON directly to the structured MLC Sensor Monitor format (`POST /api/v1/ingest`).
   * `mqtt`: Forwards MQTT messages with `QoS 1` to an upstream cloud broker. Since MQTT v3.1.1 does not support timestamp metadata by default, the proxy offers three configurable `timestamp_mode` options:
     * `none`: Default behavior (No timestamp).
     * `json_inject`: Unpacks JSON payloads and injects the timestamp (Unix ms) as the `_ts` attribute by default ("inject if absent" - existing fields are never overwritten!).
-    * `v5_property`: Uses MQTT v5 and sends the timestamp as a "User Property" header.
+    * `v5_property`: Uses **MQTT v5** to inject the timestamp cleanly and highly efficiently as a "User Property" (`ts`) in the MQTT header. The JSON payload remains 100% untouched.
   
   > [!TIP]
   > **Note on Timestamps & Zigbee2MQTT:** If you are not using our own MLC backend, you should enable the `last_seen` option (as `epoch`) in Zigbee2MQTT. You can then set `timestamp_field: "last_seen"` in the proxy configuration. The proxy will act as a clean polyfill and only insert its reception time if Zigbee2MQTT hasn't provided a value yet.
@@ -88,10 +106,13 @@ A simple CLI tool (`bin/mqttbridge`) to forward all messages from a "master" MQT
 ```bash
 ./bin/mqttbridge --master tcp://localhost:1883 --slave tcp://localhost:1884 --topic "#"
 ```
-Use `./bin/mqttbridge --help` for more options.
 
-> [!NOTE]
-> **Limitation:** Forwarding is currently **strictly unidirectional** (Master -> Slave). It is therefore _not_ possible to work bidirectionally with this test tool, e.g., to turn on a light on the master broker via the slave broker.
+**Bidirectional Mode:**
+By appending the `--bidi` flag, the tool operates bidirectionally (also routing data from the slave back to the master). It utilizes smart loop detection to effectively prevent endless echo loops.
+```bash
+./bin/mqttbridge --master tcp://localhost:1883 --slave tcp://localhost:1884 --topic "#" --bidi
+```
+Use `./bin/mqttbridge --help` for more options.
 
 ## Configuration
 All parameters and architecture diagrams can be found in the [Configuration Documentation](docs/configuration.md).
@@ -103,4 +124,7 @@ The version of the proxy is automatically derived from your Git tags during the 
 This project is licensed under the **GNU General Public License v3.0 (GPLv3)**.
 Copyright (C) 2026 Michael Lechner
 
-This license ensures the requirement for attribution of the original author. Anyone who modifies or redistributes this project must retain the copyright notice and make their changes available as Open Source under the same license terms (GPLv3). See the `LICENSE` file for the full license terms.
+This license ensures the mandatory attribution of the original author. Anyone who modifies or redistributes this project must retain the copyright notice and make their modifications available as open source under the same license terms (GPLv3). See the `LICENSE` file for the full license terms.
+
+## Changelog
+All release notes and changes can be found in the [CHANGELOG_en.md](CHANGELOG_en.md).

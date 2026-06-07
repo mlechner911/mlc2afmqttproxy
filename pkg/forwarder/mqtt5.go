@@ -10,6 +10,7 @@ import (
 
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
+	"github.com/eclipse/paho.golang/paho/extensions/topicaliases"
 	"mlc2afmqttproxy/pkg/config"
 )
 
@@ -31,7 +32,7 @@ type MQTT5Forwarder struct {
 
 // NewMQTT5Forwarder erstellt und konfiguriert einen neuen MQTT5Forwarder für Upstream-MQTT v5.
 // Konfiguriert den autopaho Connection Manager zur automatischen Wiederverbindung im Hintergrund.
-func NewMQTT5Forwarder(upstream, username, password string, rewrite *config.TopicRewriteConf) *MQTT5Forwarder {
+func NewMQTT5Forwarder(upstream, username, password string, enableTopicAlias bool, rewrite *config.TopicRewriteConf) *MQTT5Forwarder {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	u, err := url.Parse(upstream)
@@ -56,6 +57,20 @@ func NewMQTT5Forwarder(upstream, username, password string, rewrite *config.Topi
 	if username != "" {
 		cliCfg.ClientConfig.Router = paho.NewStandardRouter()
 		cliCfg.SetUsernamePassword(username, []byte(password))
+	}
+
+	var taHandler *topicaliases.TAHandler
+	if enableTopicAlias {
+		taHandler = topicaliases.NewTAHandler(64) // Ausreichend für Zigbee (spart massiv Bandbreite)
+		cliCfg.ClientConfig.PublishHook = taHandler.PublishHook
+	}
+
+	cliCfg.OnConnectionUp = func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
+		log.Printf("[MQTT5-Upstream] Erfolgreich verbunden mit %s", upstream)
+		if taHandler != nil {
+			taHandler.ResetAll() // Wichtig für Server-Restarts, damit die Aliases beim neuen Connect neu verhandelt werden!
+			log.Printf("[MQTT5-Upstream] Topic Aliases für neue Session zurückgesetzt.")
+		}
 	}
 
 	cm, err := autopaho.NewConnection(ctx, cliCfg)
@@ -96,6 +111,11 @@ func (f *MQTT5Forwarder) Send(topic string, payload []byte, timestamp time.Time)
 		return fmt.Errorf("upstream mqtt client is not connected")
 	}
 
+	// Vorabprüfung auf Wildcards (verboten beim Publizieren)
+	if strings.ContainsAny(topic, "+#") {
+		return &PermanentError{Err: fmt.Errorf("invalid topic contains wildcard: %s", topic)}
+	}
+
 	// 1. Topic-Umschreibung (z.B. "zigbee2mqtt/sensor1" -> "cloud/sensor1")
 	if f.Rewrite != nil && f.Rewrite.MatchPrefix != "" {
 		if strings.HasPrefix(topic, f.Rewrite.MatchPrefix) {
@@ -126,7 +146,7 @@ func (f *MQTT5Forwarder) Send(topic string, payload []byte, timestamp time.Time)
 	}
 	
 	if pubResp != nil && pubResp.ReasonCode != 0 {
-		return fmt.Errorf("publish failed with reason code: %d", pubResp.ReasonCode)
+		return &PermanentError{Err: fmt.Errorf("publish failed with reason code: %d", pubResp.ReasonCode)}
 	}
 
 	log.Printf("[MQTT5-Upstream] Erfolgreich gesendet: Topic='%s', %d bytes (mit ts=%s)", topic, len(payload), tsStr)

@@ -1,5 +1,5 @@
 [Unit]
-Description=MLC2AF MQTT Store and Forward Proxy
+Description=MLC Edge Proxy
 After=network.target
 
 [Service]

@@ -1,10 +1,10 @@
-# MLC2AF MQTT Store & Forward Proxy
+# MLC Edge Proxy
 
 [🇬🇧 Read this in English](README_en.md)
 Ein  Edge-Proxy für IoT-Sensoren (z.B. Zigbee2MQTT), der auf unzuverlässigen Verbindungen (z.B. Edge-Gateways mit Mobilfunk/schlechtem WLAN) für eine verlustfreie Telemetrie-Übertragung in die Cloud sorgt.
 
 ## Was macht der Proxy?
-Der Proxy startet einen lokalen MQTT Broker (Mochi), an den Zigbee2MQTT (oder andere lokale Sensoren) ihre Daten senden. Der Proxy fängt diese Daten ab und schreibt sie lokal und extrem schnell auf die Festplatte (BadgerDB). Ein unabhängiger Hintergrund-Worker versucht anschließend, diese Daten an die Cloud weiterzuleiten.
+Der **MLC Edge Proxy** ist ein leichtgewichtiger, in Go geschriebener lokaler MQTT-Broker (basierend auf Mochi-MQTT), der eine "Store-and-Forward"-Architektur implementiert. Er ist speziell dafür konzipiert, auf Edge-Geräten (z.B. einem lokalen Raspberry Pi, der Zigbee2MQTT hostet) zu laufen. Der Proxy fängt diese Daten ab und schreibt sie lokal und extrem schnell auf die Festplatte (BadgerDB). Ein unabhängiger Hintergrund-Worker versucht anschließend, diese Daten an die Cloud weiterzuleiten.
 
 ### Warum überhaupt Zigbee Sensoren nutzen?
 Besonders im industriellen IoT- oder Edge-Umfeld bieten Zigbee-Sensoren enorme Vorteile:

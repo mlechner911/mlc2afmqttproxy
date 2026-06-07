@@ -30,7 +30,7 @@ var Version = "dev"
 // 6. Starten des Gin-Webservers zur Auslieferung des Svelte-Dashboards und der Status-API.
 func main() {
 	startTime := time.Now()
-	log.Printf("Starte MLC2AF MQTT Proxy (Version: %s)...", Version)
+	log.Printf("Starte MLC Edge Proxy (Version: %s)...", Version)
 
 	// 1. Konfiguration laden
 	cfg, err := config.LoadConfig("config.yaml")

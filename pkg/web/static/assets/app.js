@@ -83,6 +83,8 @@ function startPollingStats() {
     setInterval(pollStats, 2000);
 }
 
+let pingInterval;
+
 // MQTT WebSocket
 function connectMQTT() {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -94,16 +96,24 @@ function connectMQTT() {
         elConnBadge.textContent = 'Connected';
         elConnBadge.className = 'badge bg-success rounded-pill px-3 py-2';
         
-        // Sende MQTT CONNECT Paket
+        // Sende MQTT CONNECT Paket (Keep-Alive 60s)
         const connectPacket = new Uint8Array([
             0x10, 12, 0, 4, 77, 81, 84, 84, 4, 2, 0, 60, 0, 0
         ]);
         mqttSocket.send(connectPacket);
+        
+        // Keep-Alive Ping (PINGREQ) alle 30 Sekunden senden
+        pingInterval = setInterval(() => {
+            if (mqttSocket.readyState === WebSocket.OPEN) {
+                mqttSocket.send(new Uint8Array([0xC0, 0x00])); // PINGREQ
+            }
+        }, 30000);
     };
     
     mqttSocket.onclose = () => {
         elConnBadge.textContent = 'Disconnected';
         elConnBadge.className = 'badge bg-danger rounded-pill px-3 py-2';
+        if (pingInterval) clearInterval(pingInterval);
         setTimeout(connectMQTT, 5000);
     };
 

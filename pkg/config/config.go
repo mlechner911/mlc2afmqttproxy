@@ -54,6 +54,9 @@ type MQTTConf struct {
 	// DeduplicateIntervalMs verwirft Nachrichten mit identischem Topic und Payload,
 	// wenn sie innerhalb dieses Zeitfensters eintreffen (Standard: 0 = deaktiviert).
 	DeduplicateIntervalMs int        `yaml:"deduplicate_interval_ms"`
+	// DeduplicateIgnoreKeys definiert JSON-Keys, die beim intelligenten
+	// Deduplizierungs-Vergleich ignoriert werden sollen (z.B. last_seen).
+	DeduplicateIgnoreKeys []string   `yaml:"deduplicate_ignore_keys,omitempty"`
 }
 
 // FilterConf ermöglicht das Filtern von Topics anhand von Präfixen.

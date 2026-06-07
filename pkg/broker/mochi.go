@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -46,6 +47,8 @@ type StoreHook struct {
 	filter *config.FilterConf
 	// dedupInterval gibt an, wie viele Millisekunden identische Payloads ignoriert werden
 	dedupInterval int
+	// dedupIgnoreKeys definiert JSON-Keys, die beim intelligenten Vergleich ignoriert werden
+	dedupIgnoreKeys []string
 	
 	mu       sync.Mutex
 	lastSeen map[string]lastMsg
@@ -103,10 +106,12 @@ func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packe
 		last, exists := h.lastSeen[topic]
 		now := time.Now()
 		
-		if exists && time.Since(last.timestamp).Milliseconds() < int64(h.dedupInterval) && bytes.Equal(last.payload, pk.Payload) {
-			h.mu.Unlock()
-			// Ignoriere identische Nachricht im selben Zeitfenster
-			return pk, nil
+		if exists && time.Since(last.timestamp).Milliseconds() < int64(h.dedupInterval) {
+			if isPayloadEffectivelyEqual(last.payload, pk.Payload, h.dedupIgnoreKeys) {
+				h.mu.Unlock()
+				// Ignoriere identische Nachricht im selben Zeitfenster
+				return pk, nil
+			}
 		}
 		
 		// Map updaten
@@ -141,12 +146,43 @@ func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packe
 	return pk, nil
 }
 
-// StartLocalBroker startet den eingebetteten Mochi MQTT Broker.
+// isPayloadEffectivelyEqual vergleicht zwei Payloads. Zuerst via einfachem Byte-Vergleich.
+// Wenn dedupIgnoreKeys gesetzt sind und beide Payloads gültiges JSON sind, werden die ignorierten
+// Keys aus dem Vergleich herausgenommen.
+func isPayloadEffectivelyEqual(a, b []byte, ignoreKeys []string) bool {
+	if bytes.Equal(a, b) {
+		return true
+	}
+
+	if len(ignoreKeys) == 0 {
+		return false
+	}
+
+	// Falls beides potentielle JSON-Objekte sind, Smart-Vergleich machen
+	if len(a) > 0 && a[0] == '{' && len(b) > 0 && b[0] == '{' {
+		var mapA, mapB map[string]interface{}
+		if err := json.Unmarshal(a, &mapA); err == nil {
+			if err := json.Unmarshal(b, &mapB); err == nil {
+				// Flüchtige Keys entfernen
+				for _, k := range ignoreKeys {
+					delete(mapA, k)
+					delete(mapB, k)
+				}
+				// DeepEqual führt einen korrekten und typsicheren rekursiven Vergleich durch
+				return reflect.DeepEqual(mapA, mapB)
+			}
+		}
+	}
+
+	return false
+}
+
+// StartLocalBroker initialisiert und startet den eingebetteten Mochi MQTT Server.
 // Er stellt zwei Schnittstellen bereit:
 // 1. TCP Listener: Auf diesem Port (standardmäßig 1883) lauschen wir auf lokale Geräte wie Zigbee2MQTT.
 // 2. WebSocket Listener: Auf diesem Port (standardmäßig 1885) verbinden sich Web-Clients wie das Svelte Dashboard.
 // Der Registrierte StoreHook stellt sicher, dass alle Publish-Nachrichten persistent gespeichert werden.
-func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config.FilterConf, dedupInterval int) (*mqtt.Server, error) {
+func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config.FilterConf, dedupInterval int, dedupIgnoreKeys []string) (*mqtt.Server, error) {
 	server := mqtt.New(nil)
 
 	// Anonyme Verbindungen erlauben (wichtig für lokale, einfache IoT-Geräte)
@@ -154,10 +190,11 @@ func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config
 
 	// Hook für die BadgerDB-Pufferung registrieren
 	_ = server.AddHook(&StoreHook{
-		store:         store,
-		filter:        filter,
-		dedupInterval: dedupInterval,
-		lastSeen:      make(map[string]lastMsg),
+		store:           store,
+		filter:          filter,
+		dedupInterval:   dedupInterval,
+		dedupIgnoreKeys: dedupIgnoreKeys,
+		lastSeen:        make(map[string]lastMsg),
 	}, nil)
 
 	// Lokaler TCP Listener einrichten

@@ -22,6 +22,12 @@ mqtt:
   # Dedupliziert exakt gleiche Nachrichten auf dem gleichen Topic in diesem Zeitfenster (in ms).
   # Hilft massiv gegen Zigbee-Broadcast-Spamming. (0 = deaktiviert).
   deduplicate_interval_ms: 1000
+  # Smart JSON Deduplication: Diese Keys werden beim Vergleich ignoriert, wenn
+  # sie sich ändern, der Rest der Nachricht aber gleich bleibt. Leer lassen für reinen Byte-Vergleich.
+  deduplicate_ignore_keys:
+    - last_seen
+    - linkquality
+    - elapsed
   # Optional: Themen (Topics) filtern (spart Platz & Bandbreite, im Dashboard trotzdem sichtbar).
   filter:
     allowed_prefixes:

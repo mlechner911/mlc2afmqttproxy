@@ -7,11 +7,14 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"time"
+	"embed"
+	"io/fs"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gin-contrib/static"
 	"mlc2afmqttproxy/pkg/metrics"
 	"mlc2afmqttproxy/pkg/storage"
+	"mlc2afmqttproxy/pkg/config"
 )
 
 // StatsResponse repräsentiert das Antwort-Dokument des Puffer-Statistik API-Endpunkts.
@@ -62,27 +65,81 @@ func GetHealthHandler(version string) gin.HandlerFunc {
 	}
 }
 
+// ConfigResponse repräsentiert die Konfigurationsdaten für das Frontend.
+type ConfigResponse struct {
+	// Das konfigurierte Präfix für die Diagnose-REST-API (z.B. /api/v1).
+	APIPrefix string `json:"api_prefix"`
+	// Wie lange läuft der Server schon
+	UptimeSeconds float64 `json:"uptime_seconds"`
+	// Welcher Forwarding-Modus ist aktiv
+	Mode string `json:"mode"`
+	// Wohin funkt der Proxy
+	Target string `json:"target"`
+}
+
+// GetConfigHandler liefert die APIPrefix-Konfiguration als JSON.
+func GetConfigHandler(cfg *config.Config, startTime time.Time) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		uptime := time.Since(startTime).Seconds()
+		target := cfg.MQTT.Upstream
+		if cfg.Mode == "http" {
+			target = cfg.HTTP.Endpoint
+		}
+		c.JSON(http.StatusOK, ConfigResponse{
+			APIPrefix: cfg.Server.APIPrefix,
+			UptimeSeconds: uptime,
+			Mode: cfg.Mode,
+			Target: target,
+		})
+	}
+}
+
+//go:embed static/*
+var staticFS embed.FS
+
 // StartServer initialisiert und startet den Diagnose-Webserver.
 // Registriert Middleware für statische Dateien, leitet WebSocket-Verbindungen
 // an den lokalen Mochi-MQTT Broker weiter und registriert die JSON-APIs.
-func StartServer(port int, store *storage.Store, version string) error {
+func StartServer(cfg *config.Config, store *storage.Store, version string, startTime time.Time) error {
 	r := gin.Default()
 
-	// Statische Dateien ausliefern (Svelte Frontend aus dem dist/ Ordner)
-	r.Use(static.Serve("/", static.LocalFile("./frontend/dist", false)))
+	// Statische Dateien ausliefern (Go embedFS)
+	_, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		// Fallback: Wenn 'static' Ordner leer/nicht gefunden wird, ignoriere den Fehler, 
+		// um Tests/Builds ohne index.html durchlaufen zu lassen.
+		fmt.Printf("Warnung: static Ordner nicht gefunden in embedFS: %v\n", err)
+	} else {
+		// Serve assets directory
+		assetFS, _ := fs.Sub(staticFS, "static/assets")
+		r.StaticFS("/assets", http.FS(assetFS))
+		
+		// Serve index.html on root
+		r.GET("/", func(c *gin.Context) {
+			indexFile, err := staticFS.ReadFile("static/index.html")
+			if err != nil {
+				c.String(http.StatusNotFound, "index.html not found")
+				return
+			}
+			c.Data(http.StatusOK, "text/html; charset=utf-8", indexFile)
+		})
+	}
+
+	// API-Konfigurationsendpunkt für das Svelte-Frontend bereitstellen
+	r.GET("/config", GetConfigHandler(cfg, startTime))
 
 	// WebSocket-Verbindungen (für das Live-Dashboard) transparent an den Mochi Broker tunneln (Port 1885)
-	wsTarget, _ := url.Parse("http://localhost:1885")
+	wsTarget, _ := url.Parse(fmt.Sprintf("http://localhost:%d", cfg.MQTT.WsPort))
 	wsProxy := httputil.NewSingleHostReverseProxy(wsTarget)
 	r.GET("/mqtt", func(c *gin.Context) {
 		wsProxy.ServeHTTP(c.Writer, c.Request)
 	})
 
 	// APIs registrieren
-	r.GET("/api/v1/stats", GetStatsHandler(store))
-	r.GET("/api/v1/health", GetHealthHandler(version))
+	r.GET(cfg.Server.APIPrefix+"/stats", GetStatsHandler(store))
+	r.GET(cfg.Server.APIPrefix+"/health", GetHealthHandler(version))
 
-	address := fmt.Sprintf(":%d", port)
+	address := fmt.Sprintf(":%d", cfg.Server.Port)
 	return r.Run(address)
 }
 

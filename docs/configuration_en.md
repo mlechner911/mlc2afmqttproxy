@@ -21,6 +21,8 @@ mode: "http"
 server:
   # The port for the diagnostic web dashboard and the health API
   port: 8097
+  # (Optional) Path prefix for the diagnostic REST API (Default: "/api/v1")
+  api_prefix: "/api/v1"
 
 storage:
   # Path where BadgerDB stores its data (Store & Forward buffer)
@@ -49,6 +51,18 @@ http:
   endpoint: "https://api.example.com/ingest"
   # Optional: Will be sent as "Authorization: Bearer <token>" header
   token: "my-secret-token"
+
+worker:
+  # (Optional) The interval for the background worker in milliseconds (Default: 100)
+  interval_ms: 100
+  # (Optional) Maximum number of messages to send in a single loop/batch (Default: 100)
+  max_batch_size: 50
+  # (Optional) Throttling delay in milliseconds between messages within a batch (Default: 0)
+  batch_delay_ms: 10
+  # (Optional) Minimum backoff time on failures or connection drops in seconds (Default: 1)
+  retry_min_s: 1
+  # (Optional) Maximum backoff time on failures or connection drops in seconds (Default: 60)
+  retry_max_s: 60
 ```
 
 ## Architecture Diagram by Operation Mode

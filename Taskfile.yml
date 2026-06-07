@@ -13,10 +13,6 @@ tasks:
       - mkdir -p bin
       - go build -ldflags="{{.LDFLAGS}}" -o bin/proxy cmd/proxy/main.go
 
-  build-client:
-    desc: "Baut den Svelte Frontend-Client"
-    cmds:
-      - cd frontend && npm install && npm run build
 
   build-bridge:
     desc: "Baut das MQTT Bridge CLI-Tool in den bin/ Ordner"
@@ -25,8 +21,13 @@ tasks:
       - go build -ldflags="{{.LDFLAGS}}" -o bin/mqttbridge cmd/mqttbridge/main.go
 
   build:
-    desc: "Baut Server, Client und Bridge"
-    deps: [build-server, build-client, build-bridge]
+    desc: "Baut Server und Bridge"
+    deps: [build-server, build-bridge]
+
+  swagger:
+    desc: "Generiert die Swagger-Dokumentation für die REST-API"
+    cmds:
+      - swag init -g cmd/proxy/main.go -o docs/swagger
 
   run:
     desc: "Baut und startet den Proxy-Server lokal"

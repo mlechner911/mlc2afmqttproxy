@@ -20,6 +20,8 @@ mode: "http"
 server:
   # Der Port für das Diagnostik-Web-Dashboard und die Health-API
   port: 8097
+  # (Optional) Pfad-Präfix für die Diagnose-REST-API (Standard: "/api/v1")
+  api_prefix: "/api/v1"
 
 storage:
   # Pfad, in dem die BadgerDB ihre Daten ablegt (Store & Forward Puffer)
@@ -48,6 +50,18 @@ http:
   endpoint: "https://api.example.com/ingest"
   # Optional: Wird als "Authorization: Bearer <token>" Header mitgesendet
   token: "my-secret-token"
+
+worker:
+  # (Optional) Das Intervall für den Hintergrund-Worker in Millisekunden (Standard: 100)
+  interval_ms: 100
+  # (Optional) Maximale Anzahl von Nachrichten, die in einem Durchlauf (Batch) gesendet werden (Standard: 100)
+  max_batch_size: 50
+  # (Optional) Künstliche Verzögerung in Millisekunden zwischen Nachrichten innerhalb eines Batches (Standard: 0)
+  batch_delay_ms: 10
+  # (Optional) Minimaler Backoff bei Fehlern oder Verbindungsunterbrechungen in Sekunden (Standard: 1)
+  retry_min_s: 1
+  # (Optional) Maximaler Backoff bei Fehlern oder Verbindungsunterbrechungen in Sekunden (Standard: 60)
+  retry_max_s: 60
 ```
 
 ## Architektur-Diagramm nach Betriebsart

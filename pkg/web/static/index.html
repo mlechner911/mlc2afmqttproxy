@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="de" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MLC2AF MQTT Proxy Dashboard</title>
+    <!-- Lokales Bootstrap CSS -->
+    <link href="/assets/bootstrap.min.css" rel="stylesheet">
+    <!-- Custom Glassmorphism Styling -->
+    <link href="/assets/style.css" rel="stylesheet">
+</head>
+<body class="bg-dark text-light">
+
+<!-- Hintergrund-Effekte -->
+<div class="bg-shape shape-1"></div>
+<div class="bg-shape shape-2"></div>
+
+<div class="container py-5 position-relative z-1">
+    <!-- Header -->
+    <header class="d-flex justify-content-between align-items-center mb-5 glass-panel p-4 rounded-4">
+        <div>
+            <h1 class="h3 mb-0 fw-bold bg-gradient-text">MLC2AF MQTT Proxy</h1>
+            <p class="text-muted mb-0 small">Edge Ingestion & Store-Forward Buffer</p>
+        </div>
+        <div class="text-end">
+            <span id="conn-badge" class="badge bg-warning rounded-pill px-3 py-2">Connecting...</span>
+            <div id="uptime-display" class="small text-muted mt-2">Uptime: --</div>
+        </div>
+    </header>
+
+    <!-- Info & Config Cards -->
+    <div class="row g-4 mb-5">
+        <div class="col-md-6">
+            <div class="glass-card p-4 rounded-4 h-100">
+                <h6 class="text-uppercase text-muted fw-bold mb-3 small">Forwarding Mode</h6>
+                <div class="d-flex align-items-center">
+                    <div class="icon-circle bg-primary bg-opacity-10 text-primary me-3">
+                        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+                    </div>
+                    <div>
+                        <h4 class="mb-0 fw-bold" id="mode-display">--</h4>
+                        <small class="text-muted" id="target-display">Loading...</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="glass-card p-4 rounded-4 h-100">
+                <h6 class="text-uppercase text-muted fw-bold mb-3 small">Buffer Status</h6>
+                <div class="d-flex align-items-center">
+                    <div class="icon-circle bg-success bg-opacity-10 text-success me-3">
+                        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
+                    </div>
+                    <div>
+                        <h4 class="mb-0 fw-bold" id="buffer-display">0</h4>
+                        <small class="text-muted">Messages in queue</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Metrics Grid -->
+    <h5 class="fw-bold mb-3 px-2">Metrics</h5>
+    <div class="row g-4 mb-5">
+        <div class="col-6 col-md-3">
+            <div class="metric-card glass-card p-3 rounded-4 text-center">
+                <div class="text-muted small text-uppercase fw-bold mb-2">Received</div>
+                <h3 class="fw-bold text-info mb-0" id="metric-received">0</h3>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="metric-card glass-card p-3 rounded-4 text-center">
+                <div class="text-muted small text-uppercase fw-bold mb-2">Stored</div>
+                <h3 class="fw-bold text-primary mb-0" id="metric-stored">0</h3>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="metric-card glass-card p-3 rounded-4 text-center">
+                <div class="text-muted small text-uppercase fw-bold mb-2">Forwarded</div>
+                <h3 class="fw-bold text-success mb-0" id="metric-forwarded">0</h3>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="metric-card glass-card p-3 rounded-4 text-center">
+                <div class="text-muted small text-uppercase fw-bold mb-2">Failed</div>
+                <h3 class="fw-bold text-danger mb-0" id="metric-failed">0</h3>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live Tree -->
+    <h5 class="fw-bold mb-3 px-2 d-flex justify-content-between align-items-center">
+        <span>Live MQTT Traffic</span>
+        <button id="clear-tree-btn" class="btn btn-sm btn-outline-secondary rounded-pill px-3">Clear</button>
+    </h5>
+    <div class="glass-card p-4 rounded-4" style="min-height: 300px;">
+        <div id="tree-container" class="font-monospace small">
+            <div class="text-muted text-center py-5">Waiting for MQTT messages...</div>
+        </div>
+    </div>
+</div>
+
+<!-- Lokales Bootstrap JS & App Logik -->
+<script src="/assets/bootstrap.bundle.min.js"></script>
+<script src="/assets/app.js"></script>
+</body>
+</html>

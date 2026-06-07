@@ -6,6 +6,7 @@ package main
 
 import (
 	"log"
+	"time"
 
 	"mlc2afmqttproxy/pkg/broker"
 	"mlc2afmqttproxy/pkg/config"
@@ -28,6 +29,7 @@ var Version = "dev"
 // 5. Starten der Worker-Goroutine zum sequentiellen Abarbeiten des Puffers.
 // 6. Starten des Gin-Webservers zur Auslieferung des Svelte-Dashboards und der Status-API.
 func main() {
+	startTime := time.Now()
 	log.Printf("Starte MLC2AF MQTT Proxy (Version: %s)...", Version)
 
 	// 1. Konfiguration laden
@@ -64,13 +66,13 @@ func main() {
 	}
 
 	// 5. Forward Worker im Hintergrund starten
-	fwWorker := worker.New(db, fwd)
+	fwWorker := worker.New(db, fwd, cfg.Worker)
 	fwWorker.Start()
 	defer fwWorker.Stop()
 
 	// 6. Diagnose-Webserver und Live-Dashboard auf dem konfigurierten Port starten
-	log.Printf("Webserver lauscht auf Port %d", cfg.Server.Port)
-	if err := web.StartServer(cfg.Server.Port, db, Version); err != nil {
+	log.Printf("Webserver lauscht auf Port %d mit API-Präfix '%s'", cfg.Server.Port, cfg.Server.APIPrefix)
+	if err := web.StartServer(cfg, db, Version, startTime); err != nil {
 		log.Fatalf("Fehler beim Webserver: %v", err)
 	}
 }

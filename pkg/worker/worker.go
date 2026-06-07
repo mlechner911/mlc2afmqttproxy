@@ -10,6 +10,7 @@ import (
 
 	"github.com/dgraph-io/badger/v4"
 	"mlc2afmqttproxy/pkg/broker"
+	"mlc2afmqttproxy/pkg/config"
 	"mlc2afmqttproxy/pkg/forwarder"
 	"mlc2afmqttproxy/pkg/metrics"
 	"mlc2afmqttproxy/pkg/storage"
@@ -23,21 +24,28 @@ type Worker struct {
 	fwd   forwarder.Forwarder
 	// stop signalisiert dem Worker das Einstellen der Arbeit
 	stop  chan struct{}
+	// cfg enthält die Worker-Konfigurationseinstellungen
+	cfg   config.WorkerConf
+
+	// Fehlerverfolgung für Exponential Backoff
+	consecutiveFailures int
+	nextAttempt         time.Time
 }
 
-// New erzeugt eine neue Worker-Instanz, die auf der DB und dem Forwarder operiert.
-func New(s *storage.Store, f forwarder.Forwarder) *Worker {
+// New erzeugt eine neue Worker-Instanz, die auf der DB, dem Forwarder und der Konfiguration operiert.
+func New(s *storage.Store, f forwarder.Forwarder, cfg config.WorkerConf) *Worker {
 	return &Worker{
 		store: s,
 		fwd:   f,
 		stop:  make(chan struct{}),
+		cfg:   cfg,
 	}
 }
 
-// Start startet die periodische Worker-Schleife (alle 100ms) in einer eigenen Goroutine.
+// Start startet die periodische Worker-Schleife (Intervall über Config definiert) in einer eigenen Goroutine.
 func (w *Worker) Start() {
 	go func() {
-		ticker := time.NewTicker(100 * time.Millisecond)
+		ticker := time.NewTicker(time.Duration(w.cfg.IntervalMs) * time.Millisecond)
 		defer ticker.Stop()
 
 		for {
@@ -45,7 +53,7 @@ func (w *Worker) Start() {
 			case <-w.stop:
 				return
 			case <-ticker.C:
-				w.processNext()
+				w.runBatch()
 			}
 		}
 	}()
@@ -59,63 +67,126 @@ func (w *Worker) Stop() {
 	}
 }
 
+// runBatch verarbeitet einen Batch von gepufferten Nachrichten in einer Schleife
+// bis zu MaxBatchSize, um die DB effizient und schnell abzuarbeiten.
+func (w *Worker) runBatch() {
+	for i := 0; i < w.cfg.MaxBatchSize; i++ {
+		// Stop-Signal prüfen
+		select {
+		case <-w.stop:
+			return
+		default:
+		}
+
+		processed, err := w.processNext()
+		if err != nil {
+			// Sendevorgang oder Verbindung fehlgeschlagen (Backoff ist aktiv), Batch abbrechen.
+			break
+		}
+		if !processed {
+			// Keine weiteren Nachrichten in BadgerDB vorhanden.
+			break
+		}
+
+		// Optionale künstliche Verzögerung zwischen Nachrichten im Batch zur Upstream-Drosselung
+		if w.cfg.BatchDelayMs > 0 && i < w.cfg.MaxBatchSize-1 {
+			select {
+			case <-w.stop:
+				return
+			case <-time.After(time.Duration(w.cfg.BatchDelayMs) * time.Millisecond):
+			}
+		}
+	}
+}
+
 // processNext führt einen einzelnen Verarbeitungs- und Weiterleitungsschritt aus:
-// 1. Verbindung zum Upstream sicherstellen.
-// 2. Ältesten Puffer-Eintrag aus BadgerDB lesen.
-// 3. Zeitstempel aus dem Datenbankschlüssel (RFC3339Nano) dekodieren.
-// 4. Nachricht über Forwarder senden.
-// 5. Bei erfolgreichem Versand: Eintrag aus der BadgerDB löschen.
-func (w *Worker) processNext() {
-	// 1. Prüfen, ob der Upstream-Client verbunden ist. Wenn nicht, verbinden.
+// 1. Prüft, ob ein Backoff aktiv ist.
+// 2. Verbindung zum Upstream sicherstellen.
+// 3. Ältesten Puffer-Eintrag aus BadgerDB lesen.
+// 4. Zeitstempel aus dem Datenbankschlüssel (RFC3339Nano) dekodieren.
+// 5. Nachricht über Forwarder senden.
+// 6. Bei erfolgreichem Versand: Eintrag aus der BadgerDB löschen.
+// Gibt zurück, ob eine Nachricht erfolgreich verarbeitet wurde (processed) und ggf. einen Fehler.
+func (w *Worker) processNext() (bool, error) {
+	// 1. Backoff-Zeit prüfen
+	if time.Now().Before(w.nextAttempt) {
+		return false, nil
+	}
+
+	// 2. Prüfen, ob der Upstream-Client verbunden ist. Wenn nicht, verbinden.
 	if !w.fwd.IsConnected() {
 		err := w.fwd.Connect()
 		if err != nil {
-			// Falls der Upstream offline ist, warten wir still auf den nächsten Tick.
-			return
+			w.handleFailure()
+			return false, err
 		}
 	}
 
-	// 2. Den ältesten Eintrag (FIFO) aus der BadgerDB holen
+	// 3. Den ältesten Eintrag (FIFO) aus der BadgerDB holen
 	key, val, err := w.store.PeekFirst()
 	if err != nil {
 		if err != badger.ErrKeyNotFound {
 			log.Printf("Fehler beim Lesen aus BadgerDB: %v", err)
+			return false, err
 		}
-		return
+		return false, nil
 	}
 
-	// 3. Payload aus BadgerDB deserialisieren
+	// 4. Payload aus BadgerDB deserialisieren
 	var wrapper broker.PayloadWrapper
 	if err := json.Unmarshal(val, &wrapper); err != nil {
 		log.Printf("Fehler beim Entpacken der BadgerDB-Nachricht: %v. Lösche korrupten Eintrag.", err)
 		w.store.Delete(key)
-		return
+		return true, nil // true zurückgeben, da dieser Tabelleneintrag erledigt (gelöscht) ist
 	}
 
-	// Zeitstempel aus dem Key rekonstruieren.
-	// Die Schlüssel werden in mochi.go als time.RFC3339Nano formatiert abgespeichert.
+	// Zeitstempel aus dem Key rekonstruieren
 	var ts time.Time
 	ts, err = time.Parse(time.RFC3339Nano, string(key))
 	if err != nil {
-		// Fallback auf time.Now(), falls das Schlüsselformat fehlerhaft sein sollte
 		ts = time.Now()
 	}
 
-	// 4. Nachricht an Upstream senden.
+	// 5. Nachricht an Upstream senden
 	err = w.fwd.Send(wrapper.Topic, wrapper.Payload, ts)
 	if err != nil {
 		metrics.IncForwardFailed()
-		// Senden fehlgeschlagen (z.B. Verbindungsunterbrechung während des Sendens).
-		// Der Eintrag bleibt für einen erneuten Versuch (Retry) in der Datenbank liegen.
-		return
+		w.handleFailure()
+		return false, err
 	}
 
 	metrics.IncForwarded()
+	w.handleSuccess()
 
-	// 5. Nach erfolgreichem Versand den Eintrag aus der BadgerDB löschen
+	// 6. Nach erfolgreichem Versand den Eintrag aus der BadgerDB löschen
 	err = w.store.Delete(key)
 	if err != nil {
 		log.Printf("Fehler beim Löschen des gepufferten Eintrags: %v", err)
 	}
+
+	return true, nil
 }
 
+// handleFailure berechnet den Exponential Backoff und sperrt den Worker temporär für weitere Versuche.
+func (w *Worker) handleFailure() {
+	w.consecutiveFailures++
+	tempFailures := w.consecutiveFailures
+	if tempFailures > 10 {
+		tempFailures = 10 // Capping bei 2^10, um Overflow zu vermeiden
+	}
+
+	backoff := time.Duration(w.cfg.RetryMinS) * time.Second * time.Duration(1<<uint(tempFailures-1))
+	maxBackoff := time.Duration(w.cfg.RetryMaxS) * time.Second
+	if backoff > maxBackoff {
+		backoff = maxBackoff
+	}
+
+	w.nextAttempt = time.Now().Add(backoff)
+	log.Printf("[Worker] Upstream-Verbindung oder Sendevorgang fehlgeschlagen. Nächster Versuch in %v (Fehlversuche: %d)", backoff, w.consecutiveFailures)
+}
+
+// handleSuccess setzt den Fehlerzähler und die Backoff-Sperre zurück.
+func (w *Worker) handleSuccess() {
+	w.consecutiveFailures = 0
+	w.nextAttempt = time.Time{}
+}

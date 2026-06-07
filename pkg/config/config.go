@@ -21,6 +21,8 @@ type Config struct {
 	HTTP    HTTPConf    `yaml:"http"`
 	// Server steuert die Port-Einstellung des Diagnose-Webservers.
 	Server  ServerConf  `yaml:"server"`
+	// Worker konfiguriert das Verhalten des Store & Forward Hintergrund-Workers.
+	Worker  WorkerConf  `yaml:"worker"`
 }
 
 // StorageConf enthält Einstellungen für die persistente lokale Datenbank.
@@ -69,6 +71,23 @@ type HTTPConf struct {
 type ServerConf struct {
 	// Port ist der Port, unter dem das Dashboard und die API erreichbar sind (Standard: 8080).
 	Port int `yaml:"port"`
+	// APIPrefix definiert das Präfix für die Diagnose-REST-API (Standard: /api/v1).
+	APIPrefix string `yaml:"api_prefix"`
+}
+
+// WorkerConf enthält Einstellungen für den Forward-Worker.
+type WorkerConf struct {
+	// IntervalMs ist das Standard-Intervall für den Worker-Tick (Standard: 100ms).
+	IntervalMs int `yaml:"interval_ms"`
+	// MaxBatchSize definiert, wie viele Nachrichten maximal in einer Schleife gesendet werden (Standard: 100).
+	// Setzen auf 1 deaktiviert das Batch-Senden und verhält sich wie zuvor.
+	MaxBatchSize int `yaml:"max_batch_size"`
+	// BatchDelayMs ist die Verzögerung zwischen Nachrichten innerhalb eines Batches in Millisekunden (Standard: 0).
+	BatchDelayMs int `yaml:"batch_delay_ms"`
+	// RetryMinS ist der minimale Backoff für erneute Verbindungsversuche in Sekunden (Standard: 1s).
+	RetryMinS int `yaml:"retry_min_s"`
+	// RetryMaxS ist der maximale Backoff für erneute Verbindungsversuche in Sekunden (Standard: 60s).
+	RetryMaxS int `yaml:"retry_max_s"`
 }
 
 // LoadConfig liest eine YAML-Konfigurationsdatei vom angegebenen Pfad ein
@@ -104,6 +123,21 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Server.Port == 0 {
 		cfg.Server.Port = 8080
+	}
+	if cfg.Server.APIPrefix == "" {
+		cfg.Server.APIPrefix = "/api/v1"
+	}
+	if cfg.Worker.IntervalMs == 0 {
+		cfg.Worker.IntervalMs = 100
+	}
+	if cfg.Worker.MaxBatchSize == 0 {
+		cfg.Worker.MaxBatchSize = 100
+	}
+	if cfg.Worker.RetryMinS == 0 {
+		cfg.Worker.RetryMinS = 1
+	}
+	if cfg.Worker.RetryMaxS == 0 {
+		cfg.Worker.RetryMaxS = 60
 	}
 	
 	return &cfg, nil

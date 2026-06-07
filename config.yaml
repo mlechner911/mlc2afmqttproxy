@@ -16,3 +16,10 @@ mqtt:
 http:
   endpoint: "https://api.example.com/ingest"
   token: "my-secret-token"
+
+worker:
+  interval_ms: 100
+  max_batch_size: 50
+  batch_delay_ms: 10
+  retry_min_s: 1
+  retry_max_s: 60

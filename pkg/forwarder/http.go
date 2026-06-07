@@ -76,7 +76,7 @@ func (f *HTTPForwarder) Send(topic string, payload []byte, timestamp time.Time) 
 	device := parts[len(parts)-1]
 
 	// 2. Payload parsen
-	var raw map[string]interface{}
+	var raw map[string]any
 	if err := json.Unmarshal(payload, &raw); err != nil {
 		log.Printf("[HTTP-Ingest] Ungültiges JSON im Payload (%s), ignoriert.", device)
 		return nil // Verwerfen, da nicht reparierbar (gibt kein Fehler an Worker zurück, um Blockade zu verhindern)

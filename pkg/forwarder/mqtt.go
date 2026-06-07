@@ -96,7 +96,7 @@ func (f *MQTTForwarder) Send(topic string, payload []byte, timestamp time.Time) 
 
 	// 2. Zeitstempel-Injektion in das JSON-Payload ("json_inject")
 	if f.TimestampMode == "json_inject" {
-		var data map[string]interface{}
+		var data map[string]any
 		// Versuche Payload als JSON zu parsen
 		if err := json.Unmarshal(payload, &data); err == nil {
 			// "Inject if absent": Überschreibe niemals einen existierenden Wert im JSON

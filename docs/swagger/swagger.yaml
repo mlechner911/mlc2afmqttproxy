@@ -1,0 +1,55 @@
+definitions:
+  web.HealthResponse:
+    properties:
+      status:
+        description: Status der Anwendung (normalerweise "ok").
+        type: string
+      version:
+        description: Die aktuelle Version der Proxy-Anwendung.
+        type: string
+    type: object
+  web.StatsResponse:
+    properties:
+      buffer_count:
+        description: Die aktuelle Anzahl der in BadgerDB zwischengespeicherten Nachrichten.
+        type: integer
+      messages_forward_failed_total:
+        type: integer
+      messages_forwarded_total:
+        type: integer
+      messages_received_total:
+        type: integer
+      messages_stored_total:
+        type: integer
+    type: object
+info:
+  contact: {}
+paths:
+  /api/v1/health:
+    get:
+      description: Zeigt an, ob der Proxy läuft, und gibt die aktuelle Version aus.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Erfolgreiche Antwort
+          schema:
+            $ref: '#/definitions/web.HealthResponse'
+      summary: Health-Check abrufen
+      tags:
+      - Health
+  /api/v1/stats:
+    get:
+      description: Gibt die Anzahl der aktuell in BadgerDB zwischengespeicherten Nachrichten
+        zurück.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Erfolgreiche Antwort
+          schema:
+            $ref: '#/definitions/web.StatsResponse'
+      summary: Puffer-Statistik abrufen
+      tags:
+      - Stats
+swagger: "2.0"

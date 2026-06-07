@@ -51,6 +51,9 @@ type MQTTConf struct {
 	TopicRewrite   *TopicRewriteConf `yaml:"topic_rewrite,omitempty"`
 	// Filter limitiert, welche Topics lokal gespeichert und an den Upstream gesendet werden.
 	Filter         *FilterConf       `yaml:"filter,omitempty"`
+	// DeduplicateIntervalMs verwirft Nachrichten mit identischem Topic und Payload,
+	// wenn sie innerhalb dieses Zeitfensters eintreffen (Standard: 0 = deaktiviert).
+	DeduplicateIntervalMs int        `yaml:"deduplicate_interval_ms"`
 }
 
 // FilterConf ermöglicht das Filtern von Topics anhand von Präfixen.

@@ -19,13 +19,16 @@ mqtt:
   password: "60b03cfaddba96981b03490549f707a00332573bc84091b792d42687a1b0bac6"
   # Historische Zeitstempel mitschicken (Spätdaten/Catch-Up): JSON-Feld `ts` (ms).
   timestamp_mode: "json_inject"
+  # Dedupliziert exakt gleiche Nachrichten auf dem gleichen Topic in diesem Zeitfenster (in ms).
+  # Hilft massiv gegen Zigbee-Broadcast-Spamming. (0 = deaktiviert).
+  deduplicate_interval_ms: 1000
   # Optional: Themen (Topics) filtern (spart Platz & Bandbreite, im Dashboard trotzdem sichtbar).
-  # filter:
-  #   allowed_prefixes:
-  #     - "zigbee2mqtt/"
-  #   ignored_prefixes:
-  #     - "zigbee2mqtt/bridge/logging"
-  #     - "zigbee2mqtt/bridge/state"
+  filter:
+    allowed_prefixes:
+      - "zigbee2mqtt/"
+    ignored_prefixes:
+      - "zigbee2mqtt/bridge/logging"
+      - "zigbee2mqtt/bridge/state"
 
 # Fallback/alternativ (mode: http) — falls statt MQTT der HTTP-Ingest genutzt wird.
 http:

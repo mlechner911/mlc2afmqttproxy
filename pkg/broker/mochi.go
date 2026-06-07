@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"mlc2afmqttproxy/pkg/config"
@@ -29,6 +30,12 @@ type PayloadWrapper struct {
 	Payload []byte `json:"payload"`
 }
 
+// lastMsg speichert den Zeitpunkt und den Payload der zuletzt gesehenen Nachricht für ein Topic
+type lastMsg struct {
+	payload   []byte
+	timestamp time.Time
+}
+
 // StoreHook implementiert einen Mochi-MQTT Hook (HookBase), welcher alle
 // eingehenden Publish-Pakete abfängt und sie serialisiert in der BadgerDB ablegt.
 type StoreHook struct {
@@ -37,6 +44,11 @@ type StoreHook struct {
 	store *storage.Store
 	// filter enthält die optionalen Präfix-Regeln für das Speichern und Weiterleiten
 	filter *config.FilterConf
+	// dedupInterval gibt an, wie viele Millisekunden identische Payloads ignoriert werden
+	dedupInterval int
+	
+	mu       sync.Mutex
+	lastSeen map[string]lastMsg
 }
 
 // ID liefert den eindeutigen Bezeichner des Hooks zurück.
@@ -85,6 +97,26 @@ func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packe
 		}
 	}
 
+	// 3. Filter: Deduplizierung (Debouncing) für schnelle Spam-Bursts
+	if h.dedupInterval > 0 {
+		h.mu.Lock()
+		last, exists := h.lastSeen[topic]
+		now := time.Now()
+		
+		if exists && time.Since(last.timestamp).Milliseconds() < int64(h.dedupInterval) && bytes.Equal(last.payload, pk.Payload) {
+			h.mu.Unlock()
+			// Ignoriere identische Nachricht im selben Zeitfenster
+			return pk, nil
+		}
+		
+		// Map updaten
+		h.lastSeen[topic] = lastMsg{
+			payload:   append([]byte(nil), pk.Payload...), // Kopie erstellen, da pk.Payload überschrieben werden könnte
+			timestamp: now,
+		}
+		h.mu.Unlock()
+	}
+
 	// Erstelle Schlüssel basierend auf UTC-Zeitstempel in RFC3339Nano (für korrekte lexikographische FIFO-Sortierung in Badger)
 	key := []byte(time.Now().UTC().Format(time.RFC3339Nano))
 
@@ -114,14 +146,19 @@ func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packe
 // 1. TCP Listener: Auf diesem Port (standardmäßig 1883) lauschen wir auf lokale Geräte wie Zigbee2MQTT.
 // 2. WebSocket Listener: Auf diesem Port (standardmäßig 1885) verbinden sich Web-Clients wie das Svelte Dashboard.
 // Der Registrierte StoreHook stellt sicher, dass alle Publish-Nachrichten persistent gespeichert werden.
-func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config.FilterConf) (*mqtt.Server, error) {
+func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config.FilterConf, dedupInterval int) (*mqtt.Server, error) {
 	server := mqtt.New(nil)
 
 	// Anonyme Verbindungen erlauben (wichtig für lokale, einfache IoT-Geräte)
 	_ = server.AddHook(new(auth.AllowHook), nil)
 
 	// Hook für die BadgerDB-Pufferung registrieren
-	_ = server.AddHook(&StoreHook{store: store, filter: filter}, nil)
+	_ = server.AddHook(&StoreHook{
+		store:         store,
+		filter:        filter,
+		dedupInterval: dedupInterval,
+		lastSeen:      make(map[string]lastMsg),
+	}, nil)
 
 	// Lokaler TCP Listener einrichten
 	address := fmt.Sprintf(":%d", port)

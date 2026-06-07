@@ -10,6 +10,8 @@ fi
 mkdir -p /var/lib/mlc-edge-proxy
 chown mlc-edge-proxy:mlc-edge-proxy /var/lib/mlc-edge-proxy
 
-# Reload systemd and start the service
-systemctl daemon-reload
-systemctl enable --now mlc-edge-proxy.service
+# Reload systemd and start the service (if systemd is running)
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload || true
+    systemctl enable --now mlc-edge-proxy.service || true
+fi

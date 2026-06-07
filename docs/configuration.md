@@ -47,6 +47,17 @@ mqtt:
     match_prefix: "zigbee2mqtt/"
     replace_with: "/v1/bridgedataxxx/"
 
+  # Optional: Filter-Regeln, um unnötige Topics (wie Logs) nicht zu speichern und nicht weiterzuleiten.
+  # Werden auf das eingehende (originale) Topic angewandt, VOR dem eventuellen Rewrite.
+  filter:
+    # Whitelist: Topics MÜSSEN mit einem dieser Strings beginnen.
+    allowed_prefixes:
+      - "zigbee2mqtt/"
+    # Blacklist: Topics DÜRFEN NICHT mit einem dieser Strings beginnen.
+    ignored_prefixes:
+      - "zigbee2mqtt/bridge/logging"
+      - "zigbee2mqtt/bridge/state"
+
 http:
   # Upstream-Einstellungen (nur relevant wenn mode: "http")
   endpoint: "https://api.example.com/ingest"

@@ -43,10 +43,21 @@ mqtt:
   # It uses "inject if absent", meaning if this field already exists, it remains untouched!
   timestamp_field: "_ts"
   
-  # Optional rewrite policy for the base topic (e.g., to route to a namespace)
+  # Optional topic rewrite policy (e.g. redirect to a namespace)
   topic_rewrite:
     match_prefix: "zigbee2mqtt/"
     replace_with: "/v1/bridgedataxxx/"
+
+  # Optional: Filter rules to avoid storing and forwarding unnecessary topics (e.g. logs).
+  # These are applied to the incoming (original) topic, BEFORE any topic rewrite.
+  filter:
+    # Whitelist: Topics MUST start with one of these strings.
+    allowed_prefixes:
+      - "zigbee2mqtt/"
+    # Blacklist: Topics MUST NOT start with any of these strings.
+    ignored_prefixes:
+      - "zigbee2mqtt/bridge/logging"
+      - "zigbee2mqtt/bridge/state"
 
 http:
   # Upstream settings (only relevant if mode: "http")

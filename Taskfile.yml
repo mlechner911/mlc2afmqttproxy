@@ -35,6 +35,12 @@ tasks:
     cmds:
       - ./bin/proxy
 
+  devbridge:
+    desc: "Startet die MQTT Bridge für lokale Tests (Master: 1883 -> Slave: 1884)"
+    deps: [build-bridge]
+    cmds:
+      - ./bin/mqttbridge --master tcp://localhost:1883 --slave tcp://localhost:1884 --topic "#"
+
   clean:
     desc: "Löscht generierte Binaries und lokale Daten"
     cmds:

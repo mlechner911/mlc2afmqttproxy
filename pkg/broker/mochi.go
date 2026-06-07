@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
+	"mlc2afmqttproxy/pkg/config"
 	"mlc2afmqttproxy/pkg/metrics"
 	"mlc2afmqttproxy/pkg/storage"
 
@@ -33,6 +35,8 @@ type StoreHook struct {
 	mqtt.HookBase
 	// store ist die Referenz auf den lokalen BadgerDB-Wrapper
 	store *storage.Store
+	// filter enthält die optionalen Präfix-Regeln für das Speichern und Weiterleiten
+	filter *config.FilterConf
 }
 
 // ID liefert den eindeutigen Bezeichner des Hooks zurück.
@@ -53,6 +57,33 @@ func (h *StoreHook) Provides(b byte) bool {
 // aktuellen Zeitstempel (für die FIFO-Abarbeitung) in der BadgerDB gespeichert.
 func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet, error) {
 	metrics.IncReceived()
+
+	topic := pk.TopicName
+
+	// 1. Filter: AllowedPrefixes (Whitelist)
+	if h.filter != nil && len(h.filter.AllowedPrefixes) > 0 {
+		allowed := false
+		for _, prefix := range h.filter.AllowedPrefixes {
+			if strings.HasPrefix(topic, prefix) {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			// Topic nicht in der Whitelist -> Verwerfen (nicht speichern)
+			return pk, nil
+		}
+	}
+
+	// 2. Filter: IgnoredPrefixes (Blacklist)
+	if h.filter != nil && len(h.filter.IgnoredPrefixes) > 0 {
+		for _, prefix := range h.filter.IgnoredPrefixes {
+			if strings.HasPrefix(topic, prefix) {
+				// Topic in der Blacklist -> Verwerfen (nicht speichern)
+				return pk, nil
+			}
+		}
+	}
 
 	// Erstelle Schlüssel basierend auf UTC-Zeitstempel in RFC3339Nano (für korrekte lexikographische FIFO-Sortierung in Badger)
 	key := []byte(time.Now().UTC().Format(time.RFC3339Nano))
@@ -83,14 +114,14 @@ func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packe
 // 1. TCP Listener: Auf diesem Port (standardmäßig 1883) lauschen wir auf lokale Geräte wie Zigbee2MQTT.
 // 2. WebSocket Listener: Auf diesem Port (standardmäßig 1885) verbinden sich Web-Clients wie das Svelte Dashboard.
 // Der Registrierte StoreHook stellt sicher, dass alle Publish-Nachrichten persistent gespeichert werden.
-func StartLocalBroker(port int, wsPort int, store *storage.Store) (*mqtt.Server, error) {
+func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config.FilterConf) (*mqtt.Server, error) {
 	server := mqtt.New(nil)
 
 	// Anonyme Verbindungen erlauben (wichtig für lokale, einfache IoT-Geräte)
 	_ = server.AddHook(new(auth.AllowHook), nil)
 
 	// Hook für die BadgerDB-Pufferung registrieren
-	_ = server.AddHook(&StoreHook{store: store}, nil)
+	_ = server.AddHook(&StoreHook{store: store, filter: filter}, nil)
 
 	// Lokaler TCP Listener einrichten
 	address := fmt.Sprintf(":%d", port)

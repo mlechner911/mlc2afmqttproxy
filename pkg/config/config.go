@@ -49,6 +49,16 @@ type MQTTConf struct {
 	TimestampField string            `yaml:"timestamp_field"`
 	// TopicRewrite erlaubt das Umschreiben von Topics vor dem Senden an den Upstream-Broker.
 	TopicRewrite   *TopicRewriteConf `yaml:"topic_rewrite,omitempty"`
+	// Filter limitiert, welche Topics lokal gespeichert und an den Upstream gesendet werden.
+	Filter         *FilterConf       `yaml:"filter,omitempty"`
+}
+
+// FilterConf ermöglicht das Filtern von Topics anhand von Präfixen.
+type FilterConf struct {
+	// AllowedPrefixes definiert Topics, die gespeichert und gesendet werden dürfen. Wenn gesetzt, müssen Topics hiermit beginnen.
+	AllowedPrefixes []string `yaml:"allowed_prefixes"`
+	// IgnoredPrefixes definiert Topics, die ignoriert werden sollen.
+	IgnoredPrefixes []string `yaml:"ignored_prefixes"`
 }
 
 // TopicRewriteConf ermöglicht das Ersetzen von Topic-Präfixen.

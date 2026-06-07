@@ -64,7 +64,7 @@ func main() {
 	}
 
 	// 4. Mochi MQTT Broker starten
-	_, err = broker.StartLocalBroker(cfg.MQTT.LocalPort, cfg.MQTT.WsPort, db)
+	_, err = broker.StartLocalBroker(cfg.MQTT.LocalPort, cfg.MQTT.WsPort, db, cfg.MQTT.Filter)
 	if err != nil {
 		log.Fatalf("Fehler beim Mochi Broker: %v", err)
 	}

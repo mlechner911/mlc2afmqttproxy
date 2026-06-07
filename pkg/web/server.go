@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-contrib/static"
+	"mlc2afmqttproxy/pkg/metrics"
 	"mlc2afmqttproxy/pkg/storage"
 )
 
@@ -17,6 +18,7 @@ import (
 type StatsResponse struct {
 	// Die aktuelle Anzahl der in BadgerDB zwischengespeicherten Nachrichten.
 	BufferCount int `json:"buffer_count"`
+	metrics.Stats
 }
 
 // HealthResponse repräsentiert das Antwort-Dokument des Health-Check API-Endpunkts.
@@ -39,6 +41,7 @@ func GetStatsHandler(store *storage.Store) gin.HandlerFunc {
 		count, _ := store.GetSize()
 		c.JSON(http.StatusOK, StatsResponse{
 			BufferCount: count,
+			Stats:       metrics.GetStats(),
 		})
 	}
 }

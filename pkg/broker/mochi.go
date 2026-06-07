@@ -9,6 +9,7 @@ import (
 	"log"
 	"time"
 
+	"mlc2afmqttproxy/pkg/metrics"
 	"mlc2afmqttproxy/pkg/storage"
 
 	mqtt "github.com/mochi-mqtt/server/v2"
@@ -51,6 +52,8 @@ func (h *StoreHook) Provides(b byte) bool {
 // Die Nachricht wird abgefangen, in einen PayloadWrapper gepackt und mit dem
 // aktuellen Zeitstempel (für die FIFO-Abarbeitung) in der BadgerDB gespeichert.
 func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet, error) {
+	metrics.IncReceived()
+
 	// Erstelle Schlüssel basierend auf UTC-Zeitstempel in RFC3339Nano (für korrekte lexikographische FIFO-Sortierung in Badger)
 	key := []byte(time.Now().UTC().Format(time.RFC3339Nano))
 
@@ -68,6 +71,8 @@ func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packe
 	// Speichern in BadgerDB
 	if err := h.store.Push(key, val); err != nil {
 		log.Printf("Fehler beim Speichern der MQTT-Nachricht in BadgerDB: %v", err)
+	} else {
+		metrics.IncStored()
 	}
 
 	return pk, nil

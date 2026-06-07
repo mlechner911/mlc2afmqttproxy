@@ -11,6 +11,7 @@ import (
 	"github.com/dgraph-io/badger/v4"
 	"mlc2afmqttproxy/pkg/broker"
 	"mlc2afmqttproxy/pkg/forwarder"
+	"mlc2afmqttproxy/pkg/metrics"
 	"mlc2afmqttproxy/pkg/storage"
 )
 
@@ -103,10 +104,13 @@ func (w *Worker) processNext() {
 	// 4. Nachricht an Upstream senden.
 	err = w.fwd.Send(wrapper.Topic, wrapper.Payload, ts)
 	if err != nil {
+		metrics.IncForwardFailed()
 		// Senden fehlgeschlagen (z.B. Verbindungsunterbrechung während des Sendens).
 		// Der Eintrag bleibt für einen erneuten Versuch (Retry) in der Datenbank liegen.
 		return
 	}
+
+	metrics.IncForwarded()
 
 	// 5. Nach erfolgreichem Versand den Eintrag aus der BadgerDB löschen
 	err = w.store.Delete(key)

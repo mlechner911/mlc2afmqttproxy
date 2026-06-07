@@ -18,8 +18,18 @@ const elMetrics = {
 };
 
 // SVG Icons
-const chevronIcon = `<svg class="toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>`;
 const dotIcon = `<svg class="toggle-icon" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4"/></svg>`;
+
+// Tree State
+const openPaths = new Set();
+openPaths.add('root');
+
+function toggleNode(el, path) {
+    const isClosed = el.nextElementSibling.classList.toggle('open');
+    el.querySelector('.toggle-icon').classList.toggle('open');
+    if (isClosed) openPaths.add(path);
+    else openPaths.delete(path);
+}
 
 // Format Uptime
 function formatUptime(seconds) {
@@ -184,7 +194,12 @@ function updateTree(topic, payload) {
     for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
         if (i === parts.length - 1) {
-            current[part] = payload;
+            if (typeof payload === 'object' && payload !== null && !Array.isArray(payload) &&
+                typeof current[part] === 'object' && current[part] !== null && !Array.isArray(current[part])) {
+                Object.assign(current[part], payload);
+            } else {
+                current[part] = payload;
+            }
         } else {
             if (!current[part] || typeof current[part] !== 'object' || Array.isArray(current[part])) {
                 current[part] = {};
@@ -197,9 +212,11 @@ function updateTree(topic, payload) {
 }
 
 // Tree Rendering
-function createNodeHtml(key, val) {
+function createNodeHtml(key, val, path) {
     const isObj = val !== null && typeof val === 'object' && !Array.isArray(val);
     const hasChildren = isObj && Object.keys(val).length > 0;
+    const currentPath = path ? `${path}/${key}` : key;
+    const isOpen = openPaths.has(currentPath) || key === 'root';
     
     let valHtml = '';
     if (!isObj) {
@@ -210,17 +227,19 @@ function createNodeHtml(key, val) {
         else valHtml = `<span class="node-val-string">${val}</span>`;
     }
 
+    const chevronSvg = `<svg class="toggle-icon ${isOpen ? 'open' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>`;
+
     let html = `<div class="tree-node">
-        <div class="tree-node-header" onclick="this.nextElementSibling.classList.toggle('open'); this.querySelector('.toggle-icon').classList.toggle('open')">
-            ${hasChildren ? chevronIcon : dotIcon}
+        <div class="tree-node-header" onclick="toggleNode(this, '${currentPath}')">
+            ${hasChildren ? chevronSvg : dotIcon}
             <span class="node-key">${key}</span>
             ${!isObj ? `<span class="ms-2">: ${valHtml}</span>` : ''}
         </div>
-        <div class="node-children ${key === 'root' ? 'open' : ''}">`;
+        <div class="node-children ${isOpen ? 'open' : ''}">`;
 
     if (hasChildren) {
         for (const [k, v] of Object.entries(val)) {
-            html += createNodeHtml(k, v);
+            html += createNodeHtml(k, v, currentPath);
         }
     }
 
@@ -233,7 +252,7 @@ function renderTree() {
     
     let html = '';
     for (const [k, v] of Object.entries(treeData)) {
-        html += createNodeHtml(k, v);
+        html += createNodeHtml(k, v, '');
     }
     treeContainer.innerHTML = html;
 }

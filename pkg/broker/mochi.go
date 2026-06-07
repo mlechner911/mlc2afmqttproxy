@@ -109,6 +109,8 @@ func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packe
 		if exists && time.Since(last.timestamp).Milliseconds() < int64(h.dedupInterval) {
 			if isPayloadEffectivelyEqual(last.payload, pk.Payload, h.dedupIgnoreKeys) {
 				h.mu.Unlock()
+				// Zähle die weggeworfene Nachricht
+				metrics.IncDeduplicated()
 				// Ignoriere identische Nachricht im selben Zeitfenster
 				return pk, nil
 			}

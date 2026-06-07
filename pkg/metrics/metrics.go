@@ -8,6 +8,7 @@ type Stats struct {
 	MessagesStored        uint64 `json:"messages_stored_total"`
 	MessagesForwarded     uint64 `json:"messages_forwarded_total"`
 	MessagesForwardFailed uint64 `json:"messages_forward_failed_total"`
+	MessagesDeduplicated  uint64 `json:"messages_deduplicated_total"`
 }
 
 var (
@@ -15,6 +16,7 @@ var (
 	messagesStored        uint64
 	messagesForwarded     uint64
 	messagesForwardFailed uint64
+	messagesDeduplicated  uint64
 )
 
 // IncReceived erhöht den Zähler für lokal empfangene Pakete.
@@ -37,6 +39,11 @@ func IncForwardFailed() {
 	atomic.AddUint64(&messagesForwardFailed, 1)
 }
 
+// IncDeduplicated erhöht den Zähler für aufgrund von Debouncing verworfene Pakete.
+func IncDeduplicated() {
+	atomic.AddUint64(&messagesDeduplicated, 1)
+}
+
 // GetStats liefert den aktuellen Stand aller Zähler.
 func GetStats() Stats {
 	return Stats{
@@ -44,5 +51,6 @@ func GetStats() Stats {
 		MessagesStored:        atomic.LoadUint64(&messagesStored),
 		MessagesForwarded:     atomic.LoadUint64(&messagesForwarded),
 		MessagesForwardFailed: atomic.LoadUint64(&messagesForwardFailed),
+		MessagesDeduplicated:  atomic.LoadUint64(&messagesDeduplicated),
 	}
 }

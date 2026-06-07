@@ -11,7 +11,7 @@ tasks:
     desc: "Baut das Go-Backend in den bin/ Ordner"
     cmds:
       - mkdir -p bin
-      - go build -ldflags="{{.LDFLAGS}}" -o bin/proxy cmd/proxy/main.go
+      - go build -ldflags="{{.LDFLAGS}}" -o bin/mlc-edge-proxy cmd/proxy/main.go
 
 
   build-bridge:
@@ -33,7 +33,7 @@ tasks:
     desc: "Baut und startet den Proxy-Server lokal"
     deps: [build-server]
     cmds:
-      - ./bin/proxy
+      - ./bin/mlc-edge-proxy
 
   devbridge:
     desc: "Startet die MQTT Bridge für lokale Tests (Master: 1883 -> Slave: 1884)"

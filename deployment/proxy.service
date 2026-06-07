@@ -8,7 +8,7 @@ Type=simple
 User=mlc
 # Ersetze diesen Pfad durch den tatsächlichen Installationspfad auf dem Zielsystem
 WorkingDirectory=/opt/mlc2afmqttproxy
-ExecStart=/opt/mlc2afmqttproxy/bin/proxy
+ExecStart=/opt/mlc2afmqttproxy/bin/mlc-edge-proxy
 Restart=on-failure
 RestartSec=5
 # Optional: Umgebungsvariablen hier setzen

@@ -14,6 +14,8 @@ import (
 type Store struct {
 	// db ist die zugrundeliegende BadgerDB-Instanz
 	db *badger.DB
+	// stopGC signalisiert der GC-Goroutine das Ende
+	stopGC chan struct{}
 }
 
 // InitBadger initialisiert eine persistente BadgerDB am angegebenen Pfad.
@@ -29,26 +31,36 @@ func InitBadger(path string) (*Store, error) {
 		return nil, err
 	}
 
+	stopGC := make(chan struct{})
+
 	// Garbage Collector Goroutine
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
-		for range ticker.C {
-		again:
-			// Versucht das Value Log aufzuräumen (Schwelle bei 70% ungenutztem Speicher)
-			err := db.RunValueLogGC(0.7)
-			if err == nil {
-				goto again
+		for {
+			select {
+			case <-stopGC:
+				return
+			case <-ticker.C:
+			again:
+				// Versucht das Value Log aufzuräumen (Schwelle bei 70% ungenutztem Speicher)
+				err := db.RunValueLogGC(0.7)
+				if err == nil {
+					goto again
+				}
 			}
 		}
 	}()
 
 	log.Printf("BadgerDB initialisiert in %s", path)
-	return &Store{db: db}, nil
+	return &Store{db: db, stopGC: stopGC}, nil
 }
 
 // Close schließt die BadgerDB-Instanz sauber ab.
 func (s *Store) Close() {
+	if s.stopGC != nil {
+		close(s.stopGC)
+	}
 	if s.db != nil {
 		s.db.Close()
 	}

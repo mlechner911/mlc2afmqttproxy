@@ -35,7 +35,8 @@ Especially in industrial IoT or edge environments, Zigbee sensors offer enormous
 
   * **Topic Rewrite:** Optionally, an incoming topic prefix (`match_prefix`) can be replaced with another (`replace_with`) during MQTT forwarding (e.g., from `zigbee2mqtt/` to `/v1/bridgedataxxx/`).
 * **Health & Diagnostics**: Built-in web dashboard (Port `8097`) displays the live buffer level and status information (`/api/v1/health` returns the version).
-* **Failsafe**: Out-of-the-box Systemd deployment for autostart after power failures.
+* **Fail-Safe**: Out-of-the-box systemd deployment for autostart after power failures.
+* **Best Practice Setup**: For a detailed overview of the optimal, fail-safe hardware setup, see [Best Setup & Integration (German)](docs/best_setup.md).
 
 ## Quickstart
 The project uses [Task](https://taskfile.dev/) for automated builds.

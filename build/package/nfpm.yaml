@@ -1,0 +1,34 @@
+name: "mlc-edge-proxy"
+arch: "amd64" # This will be overridden by the CLI
+platform: "linux"
+version: "0.1.0" # This will be overridden by the CLI
+maintainer: "MLC Team"
+description: "MLC Edge Proxy - Store & Forward MQTT Buffer for Edge Ingestion"
+vendor: "MLC"
+homepage: "https://github.com/mlechner911/mlc2afmqttproxy"
+license: "MIT"
+
+contents:
+  # The binary
+  - src: "../../bin/mlc-edge-proxy"
+    dst: "/usr/bin/mlc-edge-proxy"
+    file_info:
+      mode: 0755
+  
+  # The configuration file
+  - src: "../../config.yaml"
+    dst: "/etc/mlc-edge-proxy/config.yaml"
+    type: "config"
+    file_info:
+      mode: 0644
+  
+  # The systemd service unit
+  - src: "../../deployment/proxy.service"
+    dst: "/lib/systemd/system/mlc-edge-proxy.service"
+    file_info:
+      mode: 0644
+
+# Setup and teardown scripts
+scripts:
+  postinstall: "./postinstall.sh"
+  preremove: "./preremove.sh"

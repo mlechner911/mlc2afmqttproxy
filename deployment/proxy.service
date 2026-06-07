@@ -4,11 +4,12 @@ After=network.target
 
 [Service]
 Type=simple
-# Ersetze User durch den tatsächlichen System-User (z.B. mlc, ubuntu, pi)
-User=mlc
-# Ersetze diesen Pfad durch den tatsächlichen Installationspfad auf dem Zielsystem
-WorkingDirectory=/opt/mlc2afmqttproxy
-ExecStart=/opt/mlc2afmqttproxy/bin/mlc-edge-proxy
+# Standardmäßig wird der Service als system-user "mlc-edge-proxy" ausgeführt
+User=mlc-edge-proxy
+# Das Arbeitsverzeichnis ist das State-Verzeichnis, hierhin wird die BadgerDB unter ./data geschrieben
+WorkingDirectory=/var/lib/mlc-edge-proxy
+# Konfiguration wird explizit aus /etc/mlc-edge-proxy geladen
+ExecStart=/usr/bin/mlc-edge-proxy -config /etc/mlc-edge-proxy/config.yaml
 Restart=on-failure
 RestartSec=5
 # Optional: Umgebungsvariablen hier setzen

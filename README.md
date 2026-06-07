@@ -44,7 +44,16 @@ Das Projekt nutzt [Task](https://taskfile.dev/) für automatisierte Builds.
 1. **Abhängigkeiten auflösen:** `task setup`
 2. **Kompilieren:** `task build`
 3. **Lokal starten:** `task run`
-4. **Als Hintergrunddienst (Linux) installieren:** `task install-service` (erfordert sudo)
+
+### Systemweite Installation (RPM / DEB)
+Für den produktiven Einsatz empfehlen wir die generierten RPM- oder DEB-Pakete. Diese legen automatisch einen dedizierten User (`mlc-edge-proxy`) an, kopieren die Config nach `/etc/mlc-edge-proxy/` und richten den systemd-Service ein.
+
+1. **Pakete bauen:** `task package`
+2. **Installieren:**
+   - Debian/Ubuntu/Raspberry Pi: `sudo apt install ./build/dist/mlc-edge-proxy_*.deb`
+   - CentOS/RHEL/Fedora: `sudo rpm -i build/dist/mlc-edge-proxy-*.rpm`
+3. **Config anpassen:** `sudo nano /etc/mlc-edge-proxy/config.yaml`
+4. **Service neustarten:** `sudo systemctl restart mlc-edge-proxy`
 
 ## Architektur & Tools
 

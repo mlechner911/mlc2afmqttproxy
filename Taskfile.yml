@@ -55,8 +55,16 @@ tasks:
   install-service:
     desc: "Installiert den Systemd Service (benötigt sudo)"
     cmds:
-      - sudo cp deployment/proxy.service /etc/systemd/system/mlc2afmqttproxy.service
+      - sudo cp deployment/proxy.service /etc/systemd/system/mlc-edge-proxy.service
       - sudo systemctl daemon-reload
-      - sudo systemctl enable mlc2afmqttproxy
-      - sudo systemctl restart mlc2afmqttproxy
-      - 'echo "Service installiert und gestartet! Logs gibt es via journalctl -fu mlc2afmqttproxy"'
+      - sudo systemctl enable mlc-edge-proxy
+      - sudo systemctl restart mlc-edge-proxy
+      - 'echo "Service installiert und gestartet! Logs gibt es via journalctl -fu mlc-edge-proxy"'
+
+  package:
+    desc: "Baut RPM und DEB Pakete via nfpm"
+    deps: [build]
+    cmds:
+      - mkdir -p build/dist
+      - cd build/package && go run github.com/goreleaser/nfpm/v2/cmd/nfpm@latest pkg --packager rpm --target ../dist/
+      - cd build/package && go run github.com/goreleaser/nfpm/v2/cmd/nfpm@latest pkg --packager deb --target ../dist/

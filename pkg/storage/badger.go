@@ -3,8 +3,11 @@
 package storage
 
 import (
+	"bytes"
 	"encoding/json"
 	"log"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -16,6 +19,42 @@ type Store struct {
 	db *badger.DB
 	// stopGC signalisiert der GC-Goroutine das Ende
 	stopGC chan struct{}
+
+	// seekFrom ist ein Low-Watermark (kleinster zu betrachtender Key): Store & Forward
+	// löscht jeden Eintrag nach dem Weiterleiten → es bleibt ein „Friedhof" aus
+	// Lösch-Tombstones (FIFO-Timestamp-Keys, älteste zuerst). Ein Iterator.Rewind()
+	// müsste den jedes Mal komplett durchscannen (das war der 100%-CPU-Bug). Da wir
+	// streng FIFO abarbeiten und Keys monoton wachsen, starten wir die Iteration ab
+	// dem zuletzt verarbeiteten/gelöschten Key und überspringen so die Tombstones.
+	seekMu   sync.Mutex
+	seekFrom []byte
+
+	// count ist die In-Memory-Anzahl gepufferter (lebender) Einträge. Damit der
+	// Leer-Check (PeekFirst) und das Dashboard (GetSize) NICHT iterieren müssen —
+	// sonst scannen sie bei leerer Queue jedes Mal den Tombstone-Friedhof (100% CPU).
+	count atomic.Int64
+}
+
+// seekStart positioniert den Iterator ab dem Low-Watermark (überspringt den
+// Tombstone-Friedhof), beim Kaltstart von vorn.
+func (s *Store) seekStart(it *badger.Iterator) {
+	s.seekMu.Lock()
+	from := s.seekFrom
+	s.seekMu.Unlock()
+	if from != nil {
+		it.Seek(from)
+	} else {
+		it.Rewind()
+	}
+}
+
+// advanceWatermark schiebt den Low-Watermark vorwärts (nie zurück).
+func (s *Store) advanceWatermark(key []byte) {
+	s.seekMu.Lock()
+	if s.seekFrom == nil || bytes.Compare(key, s.seekFrom) > 0 {
+		s.seekFrom = append([]byte(nil), key...)
+	}
+	s.seekMu.Unlock()
 }
 
 // InitBadger initialisiert eine persistente BadgerDB am angegebenen Pfad.
@@ -50,18 +89,46 @@ func InitBadger(path string) (*Store, error) {
 			case <-stopGC:
 				return
 			case <-ticker.C:
-			again:
-				// Versucht das Value Log aufzuräumen (Schwelle bei 70% ungenutztem Speicher)
-				err := db.RunValueLogGC(0.7)
-				if err == nil {
-					goto again
+				// Reklamierbare Value-Log-Dateien aufräumen (Schwelle 70% verwerfbar),
+				// aber GEDECKELT: RunValueLogGC liefert bei Erfolg nil — ohne Deckel
+				// kann das bei kleinen 32-MB-Dateien + Store-&-Forward-Churn (alles
+				// wird nach dem Forwarden gelöscht → fast alles verwerfbar) endlos nil
+				// zurückgeben und 100% CPU brennen. 8 Rewrites/Min (≈256 MB) genügen
+				// weit; sonst bis zum nächsten Tick warten.
+				for n := 0; n < 8; n++ {
+					if err := db.RunValueLogGC(0.7); err != nil {
+						break // ErrNoRewrite o.ä. → nichts (mehr) aufzuräumen
+					}
 				}
 			}
 		}
 	}()
 
-	log.Printf("BadgerDB initialisiert in %s", path)
-	return &Store{db: db, stopGC: stopGC}, nil
+	store := &Store{db: db, stopGC: stopGC}
+	// Einmaliger Startup-Scan, um den Puffer-Zähler zu initialisieren (danach rein
+	// in-memory via Push/Delete gepflegt).
+	if n, err := store.scanCount(); err == nil {
+		store.count.Store(int64(n))
+	}
+	log.Printf("BadgerDB initialisiert in %s (%d gepuffert)", path, store.count.Load())
+	return store, nil
+}
+
+// scanCount zählt die aktuell gepufferten (lebenden) Einträge per Voll-Iteration.
+// Nur beim Start (einmalig) — im Betrieb dient der In-Memory-Zähler.
+func (s *Store) scanCount() (int, error) {
+	var c int
+	err := s.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		for it.Rewind(); it.Valid(); it.Next() {
+			c++
+		}
+		return nil
+	})
+	return c, err
 }
 
 // Close schließt die BadgerDB-Instanz sauber ab.
@@ -76,15 +143,23 @@ func (s *Store) Close() {
 
 // Push speichert einen Schlüssel-Wert-Eintrag in der Datenbank.
 func (s *Store) Push(key []byte, val []byte) error {
-	return s.db.Update(func(txn *badger.Txn) error {
+	err := s.db.Update(func(txn *badger.Txn) error {
 		return txn.Set(key, val)
 	})
+	if err == nil {
+		s.count.Add(1)
+	}
+	return err
 }
 
 // PeekFirst liest den ältesten Eintrag (den ersten Schlüssel in lexikographischer Reihenfolge)
 // aus der Datenbank aus (FIFO-Prinzip).
 // Gibt den Schlüssel, den Wert und ggf. badger.ErrKeyNotFound zurück.
 func (s *Store) PeekFirst() (key []byte, val []byte, err error) {
+	// Leer? Dann gar nicht iterieren (kein Tombstone-Scan).
+	if s.count.Load() <= 0 {
+		return nil, nil, badger.ErrKeyNotFound
+	}
 	err = s.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
 		opts.PrefetchValues = true
@@ -92,13 +167,16 @@ func (s *Store) PeekFirst() (key []byte, val []byte, err error) {
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
-		it.Rewind()
+		s.seekStart(it) // ab Low-Watermark statt Rewind → Tombstones überspringen
 		if it.Valid() {
 			item := it.Item()
 			key = item.KeyCopy(nil)
+			s.advanceWatermark(key)
 			val, err = item.ValueCopy(nil)
 			return err
 		}
+		// Zähler sagte „nicht leer", DB ist es aber → Drift korrigieren.
+		s.count.Store(0)
 		return badger.ErrKeyNotFound
 	})
 	return
@@ -106,26 +184,25 @@ func (s *Store) PeekFirst() (key []byte, val []byte, err error) {
 
 // Delete entfernt einen Eintrag anhand seines Schlüssels.
 func (s *Store) Delete(key []byte) error {
-	return s.db.Update(func(txn *badger.Txn) error {
+	err := s.db.Update(func(txn *badger.Txn) error {
 		return txn.Delete(key)
 	})
+	if err == nil {
+		s.count.Add(-1)
+		s.advanceWatermark(key) // gelöschten Key nicht mehr anfassen
+	}
+	return err
 }
 
-// GetSize liefert die ungefähre Anzahl der aktuell gepufferten Nachrichten.
-// Zählt alle Einträge per Iterator (ohne Payload-Prefetch für hohe Effizienz).
+// GetSize liefert die Anzahl der aktuell gepufferten Nachrichten — aus dem
+// In-Memory-Zähler (O(1)), KEIN Iterator. Verhindert den Tombstone-Voll-Scan bei
+// jedem Dashboard-Stats-Poll.
 func (s *Store) GetSize() (int, error) {
-	var count int
-	err := s.db.View(func(txn *badger.Txn) error {
-		opts := badger.DefaultIteratorOptions
-		opts.PrefetchValues = false
-		it := txn.NewIterator(opts)
-		defer it.Close()
-		for it.Rewind(); it.Valid(); it.Next() {
-			count++
-		}
-		return nil
-	})
-	return count, err
+	n := s.count.Load()
+	if n < 0 {
+		n = 0
+	}
+	return int(n), nil
 }
 
 // GetDiskSizeMB liefert die aktuelle Größe der BadgerDB auf der Festplatte in Megabyte
@@ -148,7 +225,10 @@ func (s *Store) GetPendingSizeMB() int64 {
 		opts.PrefetchValues = false
 		it := txn.NewIterator(opts)
 		defer it.Close()
-		for it.Rewind(); it.Valid(); it.Next() {
+		// Ab Low-Watermark (lebende Keys ≥ Watermark) statt Rewind → Tombstones
+		// nicht durchscannen. Wird pro eingehender Nachricht fürs Tail-Drop-Limit
+		// aufgerufen (heißer Pfad).
+		for s.seekStart(it); it.Valid(); it.Next() {
 			item := it.Item()
 			total += int64(item.KeySize()) + item.ValueSize()
 		}
@@ -168,7 +248,7 @@ func (s *Store) GetRecent(limit int) ([]map[string]any, error) {
 		defer it.Close()
 
 		count := 0
-		for it.Rewind(); it.Valid(); it.Next() {
+		for s.seekStart(it); it.Valid(); it.Next() { // ab Watermark, Tombstones überspringen
 			if count >= limit {
 				break
 			}
@@ -190,4 +270,3 @@ func (s *Store) GetRecent(limit int) ([]map[string]any, error) {
 	})
 	return result, err
 }
-

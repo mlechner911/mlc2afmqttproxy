@@ -1,7 +1,8 @@
 // Package main ist der Haupteinstiegspunkt für den MLC2AF MQTT Proxy.
 // Der Proxy fungiert als lokaler MQTT-Broker (Mochi MQTT), puffert eingehende
 // Nachrichten in einer BadgerDB und leitet sie per Worker-Goroutine (Store & Forward)
-// entweder via HTTP oder Upstream-MQTT weiter.
+// entweder via HTTP oder Upstream-MQTT weiter. Zusätzlich unterstützt er Downstream-Routing
+// (Cloud → lokale Clients) mit Loop-Detection.
 package main
 
 import (
@@ -34,6 +35,7 @@ var Version = "dev"
 // 4. Starten des lokalen Mochi-MQTT-Brokers (inkl. WebSocket-Listener für das Live-Dashboard).
 // 5. Starten der Worker-Goroutine zum sequentiellen Abarbeiten des Puffers.
 // 6. Starten des Gin-Webservers zur Auslieferung des Svelte-Dashboards und der Status-API.
+// 7. Downstream (optional): Nachrichten vom Upstream-Broker an lokale Clients forwarden.
 func main() {
 	configPath := flag.String("config", "config.yaml", "Pfad zur Konfigurationsdatei")
 	flag.Parse()
@@ -54,17 +56,38 @@ func main() {
 	}
 	defer db.Close()
 
-	// 3. Upstream-Forwarder initialisieren
+	// 3. Upstream-Forwarder initialisieren (VOR dem Mochi-Broker, damit Subscribe() vor Connect() läuft)
 	var fwd forwarder.Forwarder
 	if cfg.Mode == "http" {
 		// HTTP-Modus nutzt die MLC-Sensor-Monitor Ingest-Schnittstelle
 		fwd = forwarder.NewHTTPForwarder(cfg.HTTP.Endpoint, cfg.HTTP.Token)
+		if cfg.MQTT.Downstream != nil && len(cfg.MQTT.Downstream.SubscribeTopics) > 0 {
+			log.Printf("[Downstream] Hinweis: Downstream wird im HTTP-Modus nicht unterstützt")
+		}
 	} else {
 		// MQTT-Modus leitet an einen externen Cloud- oder Master-Broker weiter
 		if cfg.MQTT.TimestampMode == "v5_property" {
 			fwd = forwarder.NewMQTT5Forwarder(cfg.MQTT.Upstream, cfg.MQTT.Username, cfg.MQTT.Password, cfg.MQTT.TopicAlias, cfg.MQTT.TopicRewrite)
 		} else {
 			fwd = forwarder.NewMQTTForwarder(cfg.MQTT.Upstream, cfg.MQTT.Username, cfg.MQTT.Password, cfg.MQTT.TimestampMode, cfg.MQTT.TimestampField, cfg.MQTT.TopicRewrite)
+		}
+
+		// Downstream: Topics + Rewrite VOR Connect konfigurieren
+		if cfg.MQTT.Downstream != nil && len(cfg.MQTT.Downstream.SubscribeTopics) > 0 {
+			// Rewrite zuerst setzen (wird im handlePublishReceived gebraucht)
+			if cfg.MQTT.Downstream.Rewrite != nil {
+				mqttfwd, ok := fwd.(interface{ SetDownRewrite(*config.TopicRewriteConf) })
+				if ok {
+					mqttfwd.SetDownRewrite(cfg.MQTT.Downstream.Rewrite)
+					log.Printf("[Downstream] Topic Rewrite: %s → %s", cfg.MQTT.Downstream.Rewrite.MatchPrefix, cfg.MQTT.Downstream.Rewrite.ReplaceWith)
+				}
+			}
+			// Topics registrieren (Handler kommt später nach Mochi-Setup)
+			if err := fwd.Subscribe(cfg.MQTT.Downstream.SubscribeTopics, nil); err != nil {
+				log.Printf("[Downstream] Subscribe-Konfiguration fehlgeschlagen: %v", err)
+			} else {
+				log.Printf("[Downstream] Topics registriert: %d (Handler wird nach Mochi-Setup gesetzt)", len(cfg.MQTT.Downstream.SubscribeTopics))
+			}
 		}
 	}
 
@@ -89,11 +112,24 @@ func main() {
 		log.Println("Diagnose-Webserver ist deaktiviert (server.enable = false).")
 	}
 
+	// 7. Downstream-Handler setzen (nach Mochi-Broker-Setup)
+	if cfg.MQTT.Downstream != nil && len(cfg.MQTT.Downstream.SubscribeTopics) > 0 && cfg.Mode == "mqtt" {
+		downstreamHandler := func(topic string, payload []byte) {
+			if err := mochiBroker.Publish(topic, payload, false, 1); err != nil {
+				log.Printf("[Downstream] Publish an lokalen Broker fehlgeschlagen: %v", err)
+			} else {
+				log.Printf("[Downstream] Forwarded an lokale Clients: Topic='%s', %d bytes", topic, len(payload))
+			}
+		}
+		fwd.SetDownstreamHandler(downstreamHandler)
+		log.Printf("[Downstream] Handler aktiv — Cloud → lokale Clients")
+	}
+
 	// --- Graceful Shutdown Setup ---
 	quit := make(chan os.Signal, 1)
 	// kill (ohne Parameter) sendet SIGTERM, Strg+C sendet SIGINT
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	
+
 	sig := <-quit
 	log.Printf("Signal %v empfangen. Beende Proxy geordnet (Graceful Shutdown)...", sig)
 
@@ -101,17 +137,16 @@ func main() {
 		// Context mit Timeout für den Webserver-Shutdown (max 5 Sekunden)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		
+
 		if err := srv.Shutdown(ctx); err != nil {
 			log.Printf("Webserver Shutdown fehlerhaft: %v", err)
 		}
 		log.Println("Webserver gestoppt.")
 	}
-	
+
 	log.Println("Stoppe Mochi MQTT Broker...")
 	_ = mochiBroker.Close()
 
 	log.Println("Datenbank und Worker werden sauber geschlossen...")
 	// defer db.Close() und defer fwWorker.Stop() werden nun beim Verlassen der main() sauber ausgeführt!
 }
-

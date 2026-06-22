@@ -52,6 +52,7 @@ Whether you are forwarding IoT data centrally to the cloud or integrating it int
   > **Note on Timestamps & Zigbee2MQTT:** If you are not using our own MLC backend, you should enable the `last_seen` option (as `epoch`) in Zigbee2MQTT. You can then set `timestamp_field: "last_seen"` in the proxy configuration. The proxy will act as a clean polyfill and only insert its reception time if Zigbee2MQTT hasn't provided a value yet.
 
   * **Topic Rewrite:** Optionally, an incoming topic prefix (`match_prefix`) can be replaced with another (`replace_with`) during MQTT forwarding (e.g., from `zigbee2mqtt/` to `/v1/bridgedataxxx/`).
+* **Downstream Routing (Cloud → Local):** Messages from the upstream broker can be forwarded to local MQTT clients (e.g., to control actuators from the cloud). Loop detection via `origin` property prevents infinite loops. See `mqtt.downstream_config` in the configuration.
 * **Health & Diagnostics**: Built-in web dashboard (Port `8097`) displays the live buffer level and status information (`/api/v1/health` returns the version).
 * **Fail-Safe**: Out-of-the-box systemd deployment for autostart after power failures.
 * **Best Practice Setup**: For a detailed overview of the optimal, fail-safe hardware setup, see [Best Setup & Integration (German)](docs/best_setup.md).

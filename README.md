@@ -52,6 +52,7 @@ Ob du IoT-Daten zentral in die Cloud funkst oder an ein lokales Smart-Home-Syste
   > **Hinweis zu Zeitstempeln & Zigbee2MQTT:** Wenn du nicht unser eigenes MLC-Backend nutzt, solltest du in Zigbee2MQTT die Option `last_seen` (als `epoch`) aktivieren. Du kannst dann in der Proxy-Konfiguration das `timestamp_field` auf `last_seen` stellen. Der Proxy agiert dann als sauberes Polyfill und fügt die Empfangszeit nur ein, falls Zigbee2MQTT noch keinen Wert gesendet hat.
 
   * **Topic Rewrite:** Optional kann beim MQTT-Forwarding ein empfangener Topic-Präfix (`match_prefix`) durch einen anderen (`replace_with`) ersetzt werden (z.B. von `zigbee2mqtt/` auf `/v1/bridgedataxxx/`).
+* **Downstream Routing (Cloud → Lokal):** Nachrichten vom Upstream-Broker können an lokale MQTT-Clients weitergeleitet werden (z.B. zum Schalten von Aktoren von der Cloud). Loop-Detection via `origin`-Property verhindert Endlosschleifen. Siehe `mqtt.downstream_config` in der Konfiguration.
 * **Health & Diagnostik**: Eingebautes Web-Dashboard (Port `8097`) zeigt den Live-Pufferstand und Status-Informationen an (`/api/v1/health` liefert die Version).
 * **Ausfallsicher**: Out-of-the-Box Systemd-Deployment für Autostart nach Stromausfällen.
 * **Best Practice Setup**: Eine detaillierte Übersicht für das optimale, ausfallsichere Hardware-Setup findest du unter [Best Setup & Integration](file:///mnt/data2tb/mlc2afmqttproxy/docs/best_setup.md).

@@ -21,7 +21,19 @@ type Forwarder interface {
 	
 	// Close beendet alle aktiven Verbindungen sauber und gibt Ressourcen frei.
 	Close()
+
+	// Subscribe registriert einen Handler, der alle eingehenden Downstream-Nachrichten
+	// vom Upstream-Broker empfängt (z.B. für Aktor-Steuerung: Cloud → lokaler Client).
+	// Ein DownstreamHandler wird mit (topic, payload) aufgerufen.
+	Subscribe(topics []string, handler DownstreamHandler) error
+
+	// SetDownstreamHandler setzt den Callback fur Downstream-Nachrichten.
+	// Kann NACH Mochi-Broker-Setup aufgerufen werden.
+	SetDownstreamHandler(handler DownstreamHandler)
 }
+
+// DownstreamHandler ist die Signatur für den Empfang von Nachrichten vom Upstream-Broker.
+type DownstreamHandler func(topic string, payload []byte)
 
 // PermanentError signalisiert, dass eine Nachricht aufgrund ihrer Beschaffenheit
 // vom Upstream-Dienst dauerhaft abgelehnt wird (z.B. ungültiges Topic)

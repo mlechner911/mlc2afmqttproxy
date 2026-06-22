@@ -74,6 +74,16 @@ mqtt:
       - "zigbee2mqtt/bridge/logging"
       - "zigbee2mqtt/bridge/state"
 
+ # Downstream: Nachrichten vom Upstream-Broker an lokale Clients forwarden (optional).
+ # Damit können z.B. Aktor-Commands aus der Cloud an lokale Geräte gesendet werden.
+ # Der Proxy vermeidet Endlosschleifen durch "origin"-Marker im Nachrichten-Header.
+ #downstream_config:
+ #  subscribe_topics:
+ #     - "cloud/commands/+"
+ #  rewrite:
+ #    match_prefix: "cloud/commands/zigbee2mqtt/"
+ #    replace_with: "zigbee2mqtt/"
+
 http:
   # Upstream-Einstellungen (nur relevant wenn mode: "http")
   endpoint: "https://api.example.com/ingest"
@@ -101,6 +111,7 @@ Die Einstellung `mode` entscheidet darüber, über welchen Weg der Worker die Da
 graph TD
     subgraph Lokales Gateway
         Z[Zigbee2MQTT] -- "Publish (QoS 1)" --> M(Lokaler Broker\nPort 1884)
+        A[Aktor / Client] <--> M
         M -- "Store Hook" --> DB[(BadgerDB\n./data)]
         DB -- "FIFO Polling" --> W((Forward Worker))
         W --> C{Config: mode}
@@ -108,6 +119,7 @@ graph TD
 
     subgraph Cloud / Upstream
         C -- "mode: mqtt" --> F_MQTT[Paho MQTT Client]
+        F_MQTT -. "Downstream" .-> M
         F_MQTT -- "tcp://cloud-broker...:1883" --> CB[Cloud MQTT Broker]
         
         C -- "mode: http" --> F_HTTP[net/http Client]

@@ -13,17 +13,17 @@ import (
 // des MLC2AF MQTT Proxys.
 type Config struct {
 	// Mode steuert den Upstream-Übertragungsmodus. Erlaubte Werte sind "mqtt" oder "http".
-	Mode    string      `yaml:"mode"`
+	Mode    string       `yaml:"mode"`
 	// Storage enthält Konfigurationsoptionen für die BadgerDB-Speicherung.
-	Storage StorageConf `yaml:"storage"`
-	// MQTT enthält Konfigurationsoptionen für den lokalen und den Upstream-MQTT-Broker.
-	MQTT    MQTTConf    `yaml:"mqtt"`
+	Storage StorageConf  `yaml:"storage"`
+	// MQTTConf enthält Konfigurationen für den lokalen und den Upstream-MQTT-Broker.
+	MQTT    MQTTConf     `yaml:"mqtt"`
 	// HTTP enthält Zugangsdaten und Endpunkte für den HTTP-Upstream.
-	HTTP    HTTPConf    `yaml:"http"`
+	HTTP    HTTPConf     `yaml:"http"`
 	// Server steuert die Port-Einstellung des Diagnose-Webservers.
-	Server  ServerConf  `yaml:"server"`
+	Server  ServerConf   `yaml:"server"`
 	// Worker konfiguriert das Verhalten des Store & Forward Hintergrund-Workers.
-	Worker  WorkerConf  `yaml:"worker"`
+	Worker  WorkerConf   `yaml:"worker"`
 }
 
 // StorageConf enthält Einstellungen für die persistente lokale Datenbank.
@@ -37,31 +37,45 @@ type StorageConf struct {
 // MQTTConf enthält Konfigurationen für die MQTT-Listener sowie die MQTT-Upstream-Verbindung.
 type MQTTConf struct {
 	// LocalPort ist der lokale Port für den TCP Mochi-MQTT Listener (z.B. 1883).
-	LocalPort     int    `yaml:"local_port"`
+	LocalPort     int              `yaml:"local_port"`
 	// WsPort ist der Port des WebSocket-Listeners für das Live-Dashboard (z.B. 1885).
-	WsPort        int    `yaml:"ws_port"`
+	WsPort          int              `yaml:"ws_port"`
 	// Upstream ist die Adresse des Cloud- oder Master-Brokers (z.B. tcp://cloud.example.com:1883).
-	Upstream      string `yaml:"upstream"`
+	Upstream        string           `yaml:"upstream"`
 	// Username ist der optionale Benutzername für den Upstream-Broker.
-	Username      string `yaml:"username"`
+	Username        string           `yaml:"username"`
 	// Password ist das optionale Passwort für den Upstream-Broker.
-	Password      string `yaml:"password"`
+	Password        string           `yaml:"password"`
 	// TopicAlias aktiviert die Nutzung von MQTT 5 Topic Aliases zur Bandbreiteneinsparung.
-	TopicAlias    bool   `yaml:"topic_alias"`
+	TopicAlias      bool             `yaml:"topic_alias"`
 	// TimestampMode steuert, wie Zeitstempel übertragen werden ("none", "json_inject", "v5_property").
-	TimestampMode  string            `yaml:"timestamp_mode"`
+	TimestampMode   string           `yaml:"timestamp_mode"`
 	// TimestampField definiert den JSON-Key beim Modus "json_inject" (Standard: "_ts").
-	TimestampField string            `yaml:"timestamp_field"`
+	TimestampField  string           `yaml:"timestamp_field"`
 	// TopicRewrite erlaubt das Umschreiben von Topics vor dem Senden an den Upstream-Broker.
-	TopicRewrite   *TopicRewriteConf `yaml:"topic_rewrite,omitempty"`
+	TopicRewrite    *TopicRewriteConf `yaml:"topic_rewrite,omitempty"`
 	// Filter limitiert, welche Topics lokal gespeichert und an den Upstream gesendet werden.
-	Filter         *FilterConf       `yaml:"filter,omitempty"`
+	Filter          *FilterConf       `yaml:"filter,omitempty"`
 	// DeduplicateIntervalMs verwirft Nachrichten mit identischem Topic und Payload,
 	// wenn sie innerhalb dieses Zeitfensters eintreffen (Standard: 0 = deaktiviert).
-	DeduplicateIntervalMs int        `yaml:"deduplicate_interval_ms"`
+	DeduplicateIntervalMs int         `yaml:"deduplicate_interval_ms"`
 	// DeduplicateIgnoreKeys definiert JSON-Keys, die beim intelligenten
 	// Deduplizierungs-Vergleich ignoriert werden sollen (z.B. last_seen).
-	DeduplicateIgnoreKeys []string   `yaml:"deduplicate_ignore_keys,omitempty"`
+	DeduplicateIgnoreKeys []string           `yaml:"deduplicate_ignore_keys,omitempty"`
+	// Downstream ermöglicht den Empfang von Nachrichten vom Upstream-Broker
+	// und das Forwarden derselben an lokale MQTT-Clients (z.B. Aktor-Steuerung).
+	Downstream          *DownstreamConf      `yaml:"downstream_config,omitempty"`
+}
+
+// DownstreamConf steuert das bidirektionale Routing vom Upstream-Broker
+// zurück zu lokalen MQTT-Clients am Mochi-Broker.
+type DownstreamConf struct {
+	// SubscribeTopics definiert die Topics, die beim Upstream-Broker abonniert werden sollen.
+	// Wildcards sind erlaubt (z.B. "cloud/commands/+").
+	SubscribeTopics []string          `yaml:"subscribe_topics,omitempty"`
+	// Rewrite erlaubt das Zurückschreiben des Topics vor dem lokalen Publish.
+	// (z.B. match_prefix: "cloud/commands/zigbee2mqtt/" → replace_with: "zigbee2mqtt/")
+	Rewrite       *TopicRewriteConf `yaml:"rewrite,omitempty"`
 }
 
 // FilterConf ermöglicht das Filtern von Topics anhand von Präfixen.
@@ -130,7 +144,7 @@ func LoadConfig(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
-	
+
 	// Default-Werte anwenden, falls nicht gesetzt:
 	if cfg.Mode == "" {
 		cfg.Mode = "mqtt"
@@ -179,7 +193,6 @@ func LoadConfig(path string) (*Config, error) {
 	if cfg.Worker.RetryMaxS == 0 {
 		cfg.Worker.RetryMaxS = 60
 	}
-	
+
 	return &cfg, nil
 }
-

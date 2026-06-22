@@ -25,18 +25,18 @@ type HTTPForwarder struct {
 // IngestReading entspricht einer einzelnen Messung im MLC Sensor Monitor Format.
 type IngestReading struct {
 	// Key ist der Name des Messwerts (z.B. "temperature", "humidity")
-	Key   string  `json:"key"`
+	Key   string   `json:"key"`
 	// Value ist der numerische Messwert (Fließkommazahl)
 	Value float64 `json:"value"`
 	// TS ist der RFC3339-Zeitstempel der Messung (wichtig für historische Offline-Daten)
-	TS    string  `json:"ts,omitempty"`
+	TS    string   `json:"ts,omitempty"`
 }
 
 // IngestRequest repräsentiert das gesamte JSON-Payload für die Ingest-Schnittstelle
 // des MLC Sensor Monitors.
 type IngestRequest struct {
 	// Device identifiziert das Quellgerät (z.B. "living_room")
-	Device   string          `json:"device"`
+	Device   string           `json:"device"`
 	// Readings enthält das Array der konkreten Messwerte des Geräts
 	Readings []IngestReading `json:"readings"`
 }
@@ -49,7 +49,7 @@ func NewHTTPForwarder(endpoint, token string) *HTTPForwarder {
 		Token:    token,
 		client: &http.Client{
 			Timeout: 10 * time.Second,
-		},
+			},
 	}
 }
 
@@ -92,21 +92,21 @@ func (f *HTTPForwarder) Send(topic string, payload []byte, timestamp time.Time) 
 		case float64:
 			floatVal = val
 		case bool:
-			// Bools werden in 1 oder 0 übersetzt
+				// Bools werden in 1 oder 0 übersetzt
 			if val {
 				floatVal = 1
-			} else {
+				} else {
 				floatVal = 0
-			}
+				}
 		default:
 			continue // Nicht-numerische Werte wie Strings (z.B. Verbindungsstatus) ignorieren
-		}
-		
+			}
+
 		readings = append(readings, IngestReading{
 			Key:   k,
 			Value: floatVal,
 			TS:    timeStr, // Sendet den Erstellungszeitstempel der Nachricht anstatt die aktuelle Serverzeit
-		})
+			})
 	}
 
 	// Falls keine passenden Metriken gefunden wurden, verwerfen wir das Paket
@@ -132,7 +132,7 @@ func (f *HTTPForwarder) Send(topic string, payload []byte, timestamp time.Time) 
 
 	req.Header.Set("Content-Type", "application/json")
 	if f.Token != "" {
-		// Nutzt X-Ingest-Token zur Authentifizierung
+			// Nutzt X-Ingest-Token zur Authentifizierung
 		req.Header.Set("X-Ingest-Token", f.Token)
 	}
 
@@ -158,3 +158,15 @@ func (f *HTTPForwarder) Close() {
 	f.client.CloseIdleConnections()
 }
 
+// Subscribe kann für HTTP-Modus nichts tun (HTTP unterstützt kein Push).
+// Gibt keinen Fehler zurück, um den Worker nicht zu blockieren.
+func (f *HTTPForwarder) Subscribe(topics []string, handler DownstreamHandler) error {
+	if len(topics) > 0 {
+		log.Printf("[HTTP-Ingest] Hinweis: Downstream-Subscribe wird im HTTP-Modus nicht unterstützt")
+	}
+	return nil
+}
+
+// SetDownstreamHandler ist ein No-Op für den HTTP-Modus.
+func (f *HTTPForwarder) SetDownstreamHandler(h DownstreamHandler) {
+}

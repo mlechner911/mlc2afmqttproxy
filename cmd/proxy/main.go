@@ -19,6 +19,7 @@ import (
 	"mlc2afmqttproxy/pkg/config"
 	"mlc2afmqttproxy/pkg/forwarder"
 	"mlc2afmqttproxy/pkg/storage"
+	"mlc2afmqttproxy/pkg/svcmon"
 	"mlc2afmqttproxy/pkg/web"
 	"mlc2afmqttproxy/pkg/worker"
 )
@@ -98,9 +99,8 @@ func main() {
 		log.Fatalf("Fehler beim Mochi Broker: %v", err)
 	}
 
-	// 5. Forward Worker im Hintergrund starten
+	// 5. Forward Worker erzeugen (Start erst nach dem optionalen Pause-Hook, s. u.)
 	fwWorker := worker.New(db, fwd, cfg.Worker)
-	fwWorker.Start()
 	defer fwWorker.Stop()
 
 	// 6. Diagnose-Webserver und Live-Dashboard auf dem konfigurierten Port starten
@@ -129,6 +129,43 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	// kill (ohne Parameter) sendet SIGTERM, Strg+C sendet SIGINT
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	// 8. Optionale Selbst-Überwachung/-Steuerung über den MLC Sensor Monitor
+	// (Heartbeat raus via HTTP-Ingest, Steuerung rein via cmd/svc/<name> auf dem
+	// Upstream-Broker). Standardmäßig AN; der Proxy läuft auch ohne Monitor weiter.
+	monCtx, monCancel := context.WithCancel(context.Background())
+	defer monCancel()
+	if cfg.MonitorEnabled() {
+		// stop/restart aus der Ferne lösen denselben geordneten Shutdown aus wie ein
+		// Signal; ein Supervisor (systemd Restart=always / docker) startet danach neu.
+		triggerShutdown := func() {
+			select {
+			case quit <- syscall.SIGTERM:
+			default:
+			}
+		}
+		reporter := svcmon.New(svcmon.Options{
+			Device:         cfg.Monitor.Device,
+			IngestURL:      cfg.Monitor.IngestURL,
+			Token:          cfg.Monitor.Token,
+			Interval:       time.Duration(cfg.Monitor.IntervalS) * time.Second,
+			ControlEnabled: cfg.MonitorControlEnabled(),
+			Broker:         cfg.MQTT.Upstream,
+			Username:       cfg.MQTT.Username,
+			Password:       cfg.MQTT.Password,
+			Version:        Version,
+			OnStop:         triggerShutdown,
+			OnRestart:      triggerShutdown,
+		})
+		// „pause"/„drain" lassen den Upstream-Versand ruhen (Daten bleiben gepuffert).
+		fwWorker.SetPauseCheck(reporter.Paused)
+		reporter.Start(monCtx)
+	} else {
+		log.Println("[svcmon] Monitor-Anbindung deaktiviert (monitor.enabled = false).")
+	}
+
+	// 9. Forward-Worker jetzt starten (Pause-Hook ist gesetzt).
+	fwWorker.Start()
 
 	sig := <-quit
 	log.Printf("Signal %v empfangen. Beende Proxy geordnet (Graceful Shutdown)...", sig)

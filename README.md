@@ -53,6 +53,7 @@ Ob du IoT-Daten zentral in die Cloud funkst oder an ein lokales Smart-Home-Syste
 
   * **Topic Rewrite:** Optional kann beim MQTT-Forwarding ein empfangener Topic-Präfix (`match_prefix`) durch einen anderen (`replace_with`) ersetzt werden (z.B. von `zigbee2mqtt/` auf `/v1/bridgedataxxx/`).
 * **Downstream Routing (Cloud → Lokal):** Nachrichten vom Upstream-Broker können an lokale MQTT-Clients weitergeleitet werden (z.B. zum Schalten von Aktoren von der Cloud). Loop-Detection via `origin`-Property verhindert Endlosschleifen. Siehe `mqtt.downstream_config` in der Konfiguration.
+* **Self-Monitoring & Fernsteuerung (optional, standardmäßig an):** Der Proxy meldet sich beim MLC Sensor Monitor als **Dienst** (`svc-edgeproxy`) per Heartbeat und ist von dort **fernsteuerbar** (pause/resume/restart/stop). Fällt der Proxy aus, erzeugt der Monitor automatisch ein Ereignis — der für Zigbee kritische Edge-Pfad ist damit lückenlos überwacht. Bewusst **lose gekoppelt** (kein Code-Import, reines HTTP+MQTT) und **abschaltbar** (`monitor.enabled: false`); der Proxy läuft auch ohne Monitor normal weiter. Details unten unter [Self-Monitoring](#self-monitoring--fernsteuerung).
 * **Health & Diagnostik**: Eingebautes Web-Dashboard (Port `8097`) zeigt den Live-Pufferstand und Status-Informationen an (`/api/v1/health` liefert die Version).
 * **Ausfallsicher**: Out-of-the-Box Systemd-Deployment für Autostart nach Stromausfällen.
 * **Best Practice Setup**: Eine detaillierte Übersicht für das optimale, ausfallsichere Hardware-Setup findest du unter [Best Setup & Integration](file:///mnt/data2tb/mlc2afmqttproxy/docs/best_setup.md).
@@ -123,6 +124,42 @@ Durch das Hinzufügen des `--bidi` Flags arbeitet das Tool bidirektional (leitet
 ./bin/mqttbridge --master tcp://localhost:1883 --slave tcp://localhost:1884 --topic "#" --bidi
 ```
 Nutze `./bin/mqttbridge --help` für weitere Optionen.
+
+## Self-Monitoring & Fernsteuerung
+Der Proxy kann sich beim **MLC Sensor Monitor** als eigener **Dienst** anmelden — als
+*optionale*, **standardmäßig aktive** und bewusst **lose gekoppelte** Funktion (reines
+HTTP + MQTT, **kein** Import von Monitor-Code). So ist der für Zigbee kritische Edge-Pfad
+mitüberwacht, ohne dass der Proxy von der Monitor-Software abhängt.
+
+**Zwei Kanäle (beide einzeln abschaltbar):**
+* **Heartbeat (raus):** alle `interval_s` Sekunden ein `POST` an den Ingest-Endpunkt
+  (`monitor.ingest_url`, Default = `http.endpoint`) mit Header `X-Ingest-Token`. Payload:
+  `service_up=1`, `service_state` (1 läuft · 2 pausiert · 3 leert), `svc_uptime_s`. Der
+  Monitor legt daraus automatisch das Gerät `svc-edgeproxy` an. **Bleibt der Heartbeat
+  aus, erzeugt der Monitor selbst ein „Keine-Daten"-Ereignis** — keine Down-Logik im Proxy nötig.
+* **Steuerung (rein):** der Proxy abonniert auf dem **ohnehin genutzten Upstream-Broker**
+  das Topic `cmd/svc/<name>` (z. B. `cmd/svc/edgeproxy`) und beantwortet Befehle mit einem
+  Ack auf `cmd/svc/<name>/ack`:
+  * `pause` / `drain` → **Upstream-Versand ruht**; eingehende Zigbee-Daten bleiben im
+    Store-&-Forward-Puffer (BadgerDB) → **kein Datenverlust**.
+  * `resume` → Versand läuft weiter und **leert den Puffer**.
+  * `restart` / `stop` → geordnetes Beenden (ein Supervisor wie `systemd Restart=always`
+    bzw. Docker startet bei `restart` neu).
+
+**Konfiguration** (`config.yaml`, Abschnitt `monitor:`) — ohne Angaben „out of the box",
+weil Ziel/Token aus dem `http:`- bzw. `mqtt:`-Block abgeleitet werden:
+```yaml
+monitor:
+  enabled: true       # Gesamt-Schalter (Heartbeat + Steuerung); false = ganz aus
+  control: true       # nur die Fernsteuerung ein/aus
+  device: "svc-edgeproxy"
+  interval_s: 30
+  # ingest_url: "http://<monitor>:58080/api/v1/ingest"  # optional, sonst http.endpoint
+  # token: "<ingest-token>"                              # optional, sonst http.token / mqtt.password
+```
+> **Sicherheit/Public-Repo:** committe **keine echten Tokens**. Die Werte in
+> `config.yaml` sind Beispiel-/Testwerte; produktiv über die eigene, nicht versionierte
+> Konfiguration setzen.
 
 ## Konfiguration
 Alle Parameter und Architektur-Diagramme findest du in der [Konfigurations-Doku](docs/configuration.md).

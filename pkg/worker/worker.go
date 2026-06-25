@@ -31,7 +31,16 @@ type Worker struct {
 	// Fehlerverfolgung für Exponential Backoff
 	consecutiveFailures int
 	nextAttempt         time.Time
+
+	// pauseCheck (optional) lässt das Upstream-Senden ruhen, solange es true liefert
+	// (Fernsteuerung „pause"/„drain"). Eingehende Nachrichten werden weiter im
+	// Store&Forward-Puffer gehalten — kein Datenverlust; „resume" leert den Puffer.
+	pauseCheck func() bool
 }
+
+// SetPauseCheck hinterlegt eine Funktion, die das Pausieren des Upstream-Versands
+// steuert (true = ruhen). nil = nie pausieren (Standardverhalten).
+func (w *Worker) SetPauseCheck(fn func() bool) { w.pauseCheck = fn }
 
 // New erzeugt eine neue Worker-Instanz, die auf der DB, dem Forwarder und der Konfiguration operiert.
 func New(s *storage.Store, f forwarder.Forwarder, cfg config.WorkerConf) *Worker {
@@ -71,6 +80,10 @@ func (w *Worker) Stop() {
 // runBatch verarbeitet einen Batch von gepufferten Nachrichten in einer Schleife
 // bis zu MaxBatchSize, um die DB effizient und schnell abzuarbeiten.
 func (w *Worker) runBatch() {
+	// Fernsteuerung „pause"/„drain": Versand ruhen lassen (Puffer bleibt erhalten).
+	if w.pauseCheck != nil && w.pauseCheck() {
+		return
+	}
 	for i := 0; i < w.cfg.MaxBatchSize; i++ {
 		// Stop-Signal prüfen
 		select {

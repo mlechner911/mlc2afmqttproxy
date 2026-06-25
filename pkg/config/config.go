@@ -24,6 +24,41 @@ type Config struct {
 	Server  ServerConf   `yaml:"server"`
 	// Worker konfiguriert das Verhalten des Store & Forward Hintergrund-Workers.
 	Worker  WorkerConf   `yaml:"worker"`
+	// Monitor steuert die OPTIONALE Selbst-Überwachung/-Steuerung über den MLC
+	// Sensor Monitor (Heartbeat + Fernsteuerung). Per Default AKTIV.
+	Monitor MonitorConf  `yaml:"monitor"`
+}
+
+// MonitorConf konfiguriert die optionale Anbindung an den MLC Sensor Monitor:
+// ein periodischer Heartbeat (der Proxy erscheint dort als Dienst-Kachel und ein
+// Ausfall löst automatisch ein Ereignis aus) sowie eine MQTT-Fernsteuerung
+// (pause/resume/drain/restart/stop). Beides ist additiv und **standardmäßig an** —
+// der Proxy läuft aber auch ohne (z. B. wenn kein Monitor erreichbar ist). Es werden
+// KEINE internen Pakete des Monitors importiert (lose Kopplung).
+type MonitorConf struct {
+	// Enabled schaltet Heartbeat + Fernsteuerung. nil/unges. = true (Default an).
+	Enabled *bool `yaml:"enabled"`
+	// Control schaltet NUR die Fernsteuerung (cmd/svc/<device>). nil/unges. = true.
+	Control *bool `yaml:"control"`
+	// Device ist der Gerätename im Monitor (Default "svc-edgeproxy", muss mit svc- beginnen).
+	Device string `yaml:"device"`
+	// IntervalS ist das Heartbeat-Intervall in Sekunden (Default 30).
+	IntervalS int `yaml:"interval_s"`
+	// IngestURL ist der HTTP-Ingest-Endpunkt für den Heartbeat. Leer = HTTP.Endpoint.
+	IngestURL string `yaml:"ingest_url"`
+	// Token ist das X-Ingest-Token für den Heartbeat. Leer = HTTP.Token bzw. MQTT.Password.
+	Token string `yaml:"token"`
+}
+
+// MonitorEnabled meldet, ob die Monitor-Anbindung (Heartbeat) aktiv ist (Default an).
+func (c *Config) MonitorEnabled() bool {
+	return c.Monitor.Enabled == nil || *c.Monitor.Enabled
+}
+
+// MonitorControlEnabled meldet, ob die Fernsteuerung aktiv ist (Default an, setzt
+// MonitorEnabled voraus).
+func (c *Config) MonitorControlEnabled() bool {
+	return c.MonitorEnabled() && (c.Monitor.Control == nil || *c.Monitor.Control)
 }
 
 // StorageConf enthält Einstellungen für die persistente lokale Datenbank.
@@ -192,6 +227,26 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Worker.RetryMaxS == 0 {
 		cfg.Worker.RetryMaxS = 60
+	}
+
+	// Monitor-Anbindung: Defaults. Gerät svc-edgeproxy, 30 s Heartbeat; Heartbeat-Ziel
+	// und Token aus dem HTTP-Block bzw. (Fallback) aus den MQTT-Upstream-Zugangsdaten —
+	// so funktioniert die Anbindung ohne Extra-Konfiguration „out of the box".
+	if cfg.Monitor.Device == "" {
+		cfg.Monitor.Device = "svc-edgeproxy"
+	}
+	if cfg.Monitor.IntervalS == 0 {
+		cfg.Monitor.IntervalS = 30
+	}
+	if cfg.Monitor.IngestURL == "" {
+		cfg.Monitor.IngestURL = cfg.HTTP.Endpoint
+	}
+	if cfg.Monitor.Token == "" {
+		if cfg.HTTP.Token != "" {
+			cfg.Monitor.Token = cfg.HTTP.Token
+		} else {
+			cfg.Monitor.Token = cfg.MQTT.Password // Upstream-Passwort = Ingest-Token
+		}
 	}
 
 	return &cfg, nil

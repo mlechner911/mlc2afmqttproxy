@@ -66,3 +66,28 @@ worker:
   batch_delay_ms: 10
   retry_min_s: 1
   retry_max_s: 60
+
+# Optionale Selbst-Überwachung/-Steuerung über den MLC Sensor Monitor.
+# STANDARDMÄSSIG AKTIV — der Proxy meldet sich periodisch als Dienst (Heartbeat)
+# und ist fernsteuerbar (pause/resume/restart/stop). Er läuft aber auch OHNE Monitor
+# normal weiter; schlägt der Heartbeat fehl, wird er einfach wiederholt. Es werden
+# keine internen Monitor-Pakete eingebunden (lose Kopplung).
+#
+# Ohne weitere Angaben funktioniert das „out of the box": Heartbeat geht an
+# http.endpoint mit http.token (bzw. mqtt.password als Token), Steuerung läuft über
+# den ohnehin genutzten Upstream-Broker (mqtt.upstream / mqtt.username / mqtt.password).
+monitor:
+  # Gesamt-Schalter (Heartbeat + Steuerung). Auf false setzen, um die Anbindung
+  # vollständig zu deaktivieren. (unges. = true)
+  enabled: true
+  # Nur die Fernsteuerung (cmd/svc/<device>) ein-/ausschalten. (unges. = true)
+  control: true
+  # Gerätename im Monitor (muss mit "svc-" beginnen). Daraus folgt das Steuer-Topic
+  # cmd/svc/edgeproxy (ohne "svc-").
+  device: "svc-edgeproxy"
+  # Heartbeat-Intervall in Sekunden.
+  interval_s: 30
+  # Optional: abweichendes Heartbeat-Ziel/Token (sonst aus dem http-Block bzw.
+  # mqtt.password). Praktisch, wenn mode: "mqtt" ist und der HTTP-Ingest woanders liegt.
+  # ingest_url: "http://127.0.0.1:58080/api/v1/ingest"
+  # token: "edge-test-7f3a9c12e8"

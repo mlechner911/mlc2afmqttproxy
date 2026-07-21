@@ -62,22 +62,22 @@ tasks:
       - 'echo "Service installiert und gestartet! Logs gibt es via journalctl -fu mlc-edge-proxy"'
 
   install-service:local:
-    desc: "Installiert den Systemd Service für den Betrieb AUS DIESEM REPO (Binary + config.yaml hier, User mlc). Damit überlebt der Proxy einen Reboot. Benötigt sudo."
-    deps: [build-server]
+    desc: "Installiert BEIDE Systemd-Services für den Betrieb AUS DIESEM REPO (Proxy + mqttbridge, User mlc). Damit überlebt die komplette z2m-Kette einen Reboot. Benötigt sudo."
+    deps: [build]
     cmds:
       # Platzhalter /opt/mlc2afmqttproxy → tatsächlicher Repo-Pfad (wie units:install im Sensor-Repo).
-      - sed "s#/opt/mlc2afmqttproxy#$(pwd)#g" deploy/systemd/mlc-edge-proxy.service | sudo tee /etc/systemd/system/mlc-edge-proxy.service > /dev/null
+      - for u in mlc-edge-proxy mlc-mqttbridge; do sed "s#/opt/mlc2afmqttproxy#$(pwd)#g" "deploy/systemd/$u.service" | sudo tee "/etc/systemd/system/$u.service" > /dev/null; done
       - sudo systemctl daemon-reload
-      - sudo systemctl enable --now mlc-edge-proxy
-      - 'echo "✓ mlc-edge-proxy installiert + enabled (startet automatisch nach Reboot). Logs: journalctl -fu mlc-edge-proxy"'
+      - sudo systemctl enable --now mlc-edge-proxy mlc-mqttbridge
+      - 'echo "✓ mlc-edge-proxy + mlc-mqttbridge installiert + enabled (starten automatisch nach Reboot). Logs: journalctl -fu mlc-edge-proxy / -fu mlc-mqttbridge"'
 
   uninstall-service:local:
-    desc: "Entfernt den aus-dem-Repo Systemd Service wieder (benötigt sudo)"
+    desc: "Entfernt die aus-dem-Repo Systemd-Services wieder (benötigt sudo)"
     cmds:
-      - sudo systemctl disable --now mlc-edge-proxy || true
-      - sudo rm -f /etc/systemd/system/mlc-edge-proxy.service
+      - sudo systemctl disable --now mlc-edge-proxy mlc-mqttbridge || true
+      - sudo rm -f /etc/systemd/system/mlc-edge-proxy.service /etc/systemd/system/mlc-mqttbridge.service
       - sudo systemctl daemon-reload
-      - 'echo "✓ mlc-edge-proxy entfernt"'
+      - 'echo "✓ mlc-edge-proxy + mlc-mqttbridge entfernt"'
 
   package:
     desc: "Baut RPM und DEB Pakete via nfpm"

@@ -1,0 +1,20 @@
+[Unit]
+# Bridge: spiegelt den BESTEHENDEN Zigbee2MQTT-Broker (:1883) in den lokalen Broker
+# des Edge-Proxys (:1884). Ohne sie kommen z2m-Nachrichten nie beim Proxy an —
+# war bisher ein manueller Start (./bin/mqttbridge …) und damit nach jedem Reboot weg.
+Description=MLC MQTT-Bridge — Zigbee2MQTT (:1883) → Edge-Proxy (:1884)
+After=network-online.target mlc-edge-proxy.service
+Wants=network-online.target
+# Ohne den Proxy-Broker auf :1884 hat die Bridge kein Ziel.
+PartOf=mlc-edge-proxy.service
+
+[Service]
+Type=simple
+User=mlc
+WorkingDirectory=/opt/mlc2afmqttproxy
+ExecStart=/opt/mlc2afmqttproxy/bin/mqttbridge --master tcp://localhost:1883 --slave tcp://localhost:1884 --topic "#" --bidi
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

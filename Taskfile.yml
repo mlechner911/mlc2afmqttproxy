@@ -1,9 +1,9 @@
 version: '3'
 
 vars:
-  # Versucht die Git-Version zu lesen, Fallback ist "v1.0.2"
+  # Versucht die Git-Version zu lesen, Fallback ist "v1.1.0"
   VERSION:
-    sh: git describe --tags --always --dirty 2>/dev/null || echo "v1.0.2"
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "v1.1.0"
   LDFLAGS: "-X 'main.Version={{.VERSION}}'"
 
 tasks:
@@ -53,13 +53,31 @@ tasks:
       - go mod tidy
 
   install-service:
-    desc: "Installiert den Systemd Service (benötigt sudo)"
+    desc: "Installiert den Systemd Service für die PAKET-Installation (/usr/bin + /etc/mlc-edge-proxy, User mlc-edge-proxy). Für den Betrieb AUS DEM REPO: install-service:local"
     cmds:
       - sudo cp deployment/proxy.service /etc/systemd/system/mlc-edge-proxy.service
       - sudo systemctl daemon-reload
       - sudo systemctl enable mlc-edge-proxy
       - sudo systemctl restart mlc-edge-proxy
       - 'echo "Service installiert und gestartet! Logs gibt es via journalctl -fu mlc-edge-proxy"'
+
+  install-service:local:
+    desc: "Installiert den Systemd Service für den Betrieb AUS DIESEM REPO (Binary + config.yaml hier, User mlc). Damit überlebt der Proxy einen Reboot. Benötigt sudo."
+    deps: [build-server]
+    cmds:
+      # Platzhalter /opt/mlc2afmqttproxy → tatsächlicher Repo-Pfad (wie units:install im Sensor-Repo).
+      - sed "s#/opt/mlc2afmqttproxy#$(pwd)#g" deploy/systemd/mlc-edge-proxy.service | sudo tee /etc/systemd/system/mlc-edge-proxy.service > /dev/null
+      - sudo systemctl daemon-reload
+      - sudo systemctl enable --now mlc-edge-proxy
+      - 'echo "✓ mlc-edge-proxy installiert + enabled (startet automatisch nach Reboot). Logs: journalctl -fu mlc-edge-proxy"'
+
+  uninstall-service:local:
+    desc: "Entfernt den aus-dem-Repo Systemd Service wieder (benötigt sudo)"
+    cmds:
+      - sudo systemctl disable --now mlc-edge-proxy || true
+      - sudo rm -f /etc/systemd/system/mlc-edge-proxy.service
+      - sudo systemctl daemon-reload
+      - 'echo "✓ mlc-edge-proxy entfernt"'
 
   package:
     desc: "Baut RPM und DEB Pakete via nfpm"

@@ -2,3 +2,8 @@
 /data/
 frontend/node_modules/
 frontend/dist/
+
+# Lokale Betriebskonfiguration mit Zugangsdaten. Bis zum 30.08.2026 war sie
+# getrackt — in einem oeffentlichen Repository, samt MQTT-Passwort,
+# Ingest-Token und Kundennummer im Kommentar. Vorlage: config.example.yaml.
+config.yaml

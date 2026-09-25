@@ -2,6 +2,8 @@ module mlc2afmqttproxy
 
 go 1.25.5
 
+toolchain go1.25.13
+
 require (
 	github.com/dgraph-io/badger/v4 v4.9.1
 	github.com/eclipse/paho.golang v0.23.0

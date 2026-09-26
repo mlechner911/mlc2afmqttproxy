@@ -133,3 +133,8 @@ This license ensures the mandatory attribution of the original author. Anyone wh
 
 ## Changelog
 All release notes and changes can be found in the [CHANGELOG_en.md](CHANGELOG_en.md).
+
+<!-- mlcai-private -->
+## Project documentation (`.mlcai/`)
+
+`.mlcai/` is a **private git submodule**: internal planning, backlog and work notes, maintained with the MLC Doc Hub. It is not publicly accessible — clone **without** `--recurse-submodules`; the build does not need it. Links into `.mlcai/` only work with access (`git submodule update --init .mlcai`).

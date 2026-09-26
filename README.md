@@ -178,3 +178,8 @@ Durch diese Lizenz ist die Pflicht zur Namensnennung (Attribution) des ursprüng
 
 ## Changelog
 Alle Release-Notes und Änderungen findest du im [CHANGELOG.md](CHANGELOG.md).
+
+<!-- mlcai-private -->
+## Projektdokumentation (`.mlcai/`)
+
+`.mlcai/` ist ein **privates Git-Submodul**: interne Planung, Backlog und Arbeitsnotizen, gepflegt mit dem MLC Doc Hub. Es ist nicht öffentlich zugänglich — **ohne** `--recurse-submodules` klonen; für den Build wird es nicht gebraucht. Links nach `.mlcai/` funktionieren nur mit Zugriff (`git submodule update --init .mlcai`).

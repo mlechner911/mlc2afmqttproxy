@@ -137,3 +137,11 @@ Durch diese Lizenz ist die Pflicht zur Namensnennung (Attribution) des ursprüng
 
 ## Changelog
 Alle Release-Notes und Änderungen findest du im [CHANGELOG.md](CHANGELOG.md).
+
+## Wer ist „Claude“ in den Commits?
+
+Einige Commits in diesem Repository sind zusammen mit Claude entstanden, dem
+KI-Modell von Anthropic. Es schreibt Code mit, hält Dokumentation und Backlog
+aktuell und sucht Fehler in der Build-Pipeline – jede Änderung wird geprüft,
+bevor sie übernommen wird. Wir verstecken das nicht:
+[wie wir mit Claude arbeiten](https://mlcgo.eu/ai/).

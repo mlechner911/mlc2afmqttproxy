@@ -7,3 +7,6 @@ frontend/dist/
 # getrackt — in einem oeffentlichen Repository, samt MQTT-Passwort,
 # Ingest-Token und Kundennummer im Kommentar. Vorlage: config.example.yaml.
 config.yaml
+
+# lokale MCP-Konfiguration (dochub-cli agent-rules)
+.mcp.json

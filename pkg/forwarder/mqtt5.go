@@ -20,6 +20,9 @@ import (
 // als MQTT v5 User Property ("ts"), um Payload-Injektionen zu vermeiden und das JSON unberührt zu lassen.
 // Unterstützt Downstream: Subscribe vom Upstream-Broker und Forward an lokale Clients.
 type MQTT5Forwarder struct {
+	// clientID ist die MQTT-Client-ID; leer = Standard. Jede Verbindung zum selben Broker
+	// braucht eine EIGENE ID — gleiche IDs werfen sich gegenseitig hinaus (Routen, 12.10.2026).
+	clientID string
 	// Upstream ist die Broker-URL (z.B. tcp://cloud.example.com:1883)
 	Upstream string
 	// Rewrite enthält Umschreibregeln für das Topic (Upstream-Richtung)
@@ -75,7 +78,7 @@ func (f *MQTT5Forwarder) connectClient() error {
 			log.Printf("[MQTT5-Upstream] Verbindung fehlgeschlagen: %v", err)
 			},
 		ClientConfig: paho.ClientConfig{
-			ClientID: "mlc2af-proxy-forwarder-v5",
+			ClientID: f.clientIDOr("mlc2af-proxy-forwarder-v5"),
 			},
 	}
 
@@ -290,3 +293,14 @@ func (f *MQTT5Forwarder) SetDownstreamHandler(h DownstreamHandler) {
 	defer f.downMu.Unlock()
 	f.downHandler = h
 }
+
+// SetClientID setzt die MQTT-Client-ID (vor dem ersten Connect aufrufen).
+func (f *MQTT5Forwarder) SetClientID(id string) { f.clientID = id }
+
+func (f *MQTT5Forwarder) clientIDOr(def string) string {
+	if f.clientID != "" {
+		return f.clientID
+	}
+	return def
+}
+

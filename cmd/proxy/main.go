@@ -227,6 +227,12 @@ func buildRoutes(cfg *config.Config) ([]broker.Route, []*worker.Worker) {
 		default:
 			fwd = forwarder.NewMQTTForwarder(rc.Upstream, rc.Username, rc.Password, cfg.MQTT.TimestampMode, cfg.MQTT.TimestampField, nil)
 		}
+		// Eigene Client-ID je Route: Mit derselben ID wie der Haupt-Upstream werfen sich die
+		// Verbindungen gegenseitig hinaus, und der Ziel-Broker ordnet sie womöglich dem
+		// falschen Mandanten zu (12.10.2026).
+		if cs, ok := fwd.(interface{ SetClientID(string) }); ok {
+			cs.SetClientID("mlc2af-proxy-forwarder-route-" + rc.Name)
+		}
 		routes = append(routes, broker.NewRoute(rc, store))
 		workers = append(workers, worker.New(store, fwd, cfg.Worker))
 		log.Printf("[Route %s] aktiv: Modus %s, %d Gerät(e) (0 = alle)", rc.Name, rc.Mode, len(rc.Devices))

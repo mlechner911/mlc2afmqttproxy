@@ -21,6 +21,9 @@ import (
 // Zeitstempel in das JSON injizieren oder als MQTT 5 User Properties mitschicken.
 // Unterstützt Downstream: Subscribe vom Upstream-Broker und Forward an lokale Clients.
 type MQTTForwarder struct {
+	// clientID ist die MQTT-Client-ID; leer = Standard. Jede Verbindung zum selben Broker
+	// braucht eine EIGENE ID — gleiche IDs werfen sich gegenseitig hinaus (Routen, 12.10.2026).
+	clientID string
 	// Upstream ist die Broker-URL (z.B. tcp://cloud.example.com:1883)
 	Upstream string
 	// TimestampMode definiert, wie mit dem Zeitstempel verfahren wird ("none", "json_inject", "v5_property")
@@ -107,7 +110,7 @@ func (f *MQTTForwarder) Connect() error {
 			log.Printf("[MQTT-Upstream] Verbindungsfehler: %v", err)
 		},
 		ClientConfig: paho.ClientConfig{
-			ClientID: "mlc2af-proxy-forwarder",
+			ClientID: f.clientIDOr("mlc2af-proxy-forwarder"),
 		},
 	}
 
@@ -281,3 +284,14 @@ func (f *MQTTForwarder) Close() {
 		f.connManager.Disconnect(ctx)
 	}
 }
+
+// SetClientID setzt die MQTT-Client-ID (vor dem ersten Connect aufrufen).
+func (f *MQTTForwarder) SetClientID(id string) { f.clientID = id }
+
+func (f *MQTTForwarder) clientIDOr(def string) string {
+	if f.clientID != "" {
+		return f.clientID
+	}
+	return def
+}
+

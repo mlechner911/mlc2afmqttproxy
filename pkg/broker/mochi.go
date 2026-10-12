@@ -50,6 +50,8 @@ type StoreHook struct {
 	dedupInterval int
 	// dedupIgnoreKeys definiert JSON-Keys, die beim intelligenten Vergleich ignoriert werden
 	dedupIgnoreKeys []string
+	// routes sind zusätzliche Upstreams mit eigenem Puffer (config.Routes)
+	routes []Route
 	
 	mu       sync.Mutex
 	lastSeen map[string]lastMsg
@@ -155,6 +157,21 @@ func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packe
 		metrics.IncStored()
 	}
 
+	// Zusätzliche Routen: eigener Puffer je Route, eigene Regeln (Filter, Geräteliste).
+	for _, rt := range h.routes {
+		p, ok := rt.Accept(pk.TopicName, pk.Payload)
+		if !ok {
+			continue
+		}
+		rv, err := json.Marshal(PayloadWrapper{Topic: pk.TopicName, Payload: p})
+		if err != nil {
+			continue
+		}
+		if err := rt.Store.Push(key, rv); err != nil {
+			log.Printf("[Route %s] Fehler beim Speichern: %v", rt.Name, err)
+		}
+	}
+
 	return pk, nil
 }
 
@@ -194,7 +211,7 @@ func isPayloadEffectivelyEqual(a, b []byte, ignoreKeys []string) bool {
 // 1. TCP Listener: Auf diesem Port (standardmäßig 1883) lauschen wir auf lokale Geräte wie Zigbee2MQTT.
 // 2. WebSocket Listener: Auf diesem Port (standardmäßig 1885) verbinden sich Web-Clients wie das Svelte Dashboard.
 // Der Registrierte StoreHook stellt sicher, dass alle Publish-Nachrichten persistent gespeichert werden.
-func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config.FilterConf, dedupInterval int, dedupIgnoreKeys []string, maxDbSizeMB int) (*mqtt.Server, error) {
+func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config.FilterConf, dedupInterval int, dedupIgnoreKeys []string, maxDbSizeMB int, routes ...Route) (*mqtt.Server, error) {
 	server := mqtt.New(nil)
 
 	// Anonyme Verbindungen erlauben (wichtig für lokale, einfache IoT-Geräte)
@@ -206,6 +223,7 @@ func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config
 		dedupInterval:   dedupInterval,
 		dedupIgnoreKeys: dedupIgnoreKeys,
 		lastSeen:        make(map[string]lastMsg),
+		routes:          routes,
 	}
 	
 	// Hook für die BadgerDB-Pufferung registrieren

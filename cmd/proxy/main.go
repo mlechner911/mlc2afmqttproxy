@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -92,9 +93,15 @@ func main() {
 		}
 	}
 
+	// 3b. Zusätzliche Routen: je Route eigener Puffer, Forwarder und Worker (config.Routes).
+	routes, routeWorkers := buildRoutes(cfg)
+	for _, rdb := range routes {
+		defer rdb.Store.Close()
+	}
+
 	// 4. Mochi MQTT Broker starten
 	log.Printf("Lokal-Broker lauscht auf TCP :%d und WebSocket :%d", cfg.MQTT.LocalPort, cfg.MQTT.WsPort)
-	mochiBroker, err := broker.StartLocalBroker(cfg.MQTT.LocalPort, cfg.MQTT.WsPort, db, cfg.MQTT.Filter, cfg.MQTT.DeduplicateIntervalMs, cfg.MQTT.DeduplicateIgnoreKeys, cfg.Storage.MaxSizeMB)
+	mochiBroker, err := broker.StartLocalBroker(cfg.MQTT.LocalPort, cfg.MQTT.WsPort, db, cfg.MQTT.Filter, cfg.MQTT.DeduplicateIntervalMs, cfg.MQTT.DeduplicateIgnoreKeys, cfg.Storage.MaxSizeMB, routes...)
 	if err != nil {
 		log.Fatalf("Fehler beim Mochi Broker: %v", err)
 	}
@@ -159,6 +166,9 @@ func main() {
 		})
 		// „pause"/„drain" lassen den Upstream-Versand ruhen (Daten bleiben gepuffert).
 		fwWorker.SetPauseCheck(reporter.Paused)
+		for _, rw := range routeWorkers {
+			rw.SetPauseCheck(reporter.Paused)
+		}
 		reporter.Start(monCtx)
 	} else {
 		log.Println("[svcmon] Monitor-Anbindung deaktiviert (monitor.enabled = false).")
@@ -166,6 +176,10 @@ func main() {
 
 	// 9. Forward-Worker jetzt starten (Pause-Hook ist gesetzt).
 	fwWorker.Start()
+	for _, rw := range routeWorkers {
+		rw.Start()
+		defer rw.Stop()
+	}
 
 	sig := <-quit
 	log.Printf("Signal %v empfangen. Beende Proxy geordnet (Graceful Shutdown)...", sig)
@@ -187,3 +201,36 @@ func main() {
 	log.Println("Datenbank und Worker werden sauber geschlossen...")
 	// defer db.Close() und defer fwWorker.Stop() werden nun beim Verlassen der main() sauber ausgeführt!
 }
+
+// buildRoutes legt für jede zusätzliche Route (config.Routes) Puffer, Forwarder und Worker an.
+// Eine Route, deren Puffer sich nicht öffnen lässt, wird übersprungen (mit Log) — der
+// Haupt-Upstream läuft davon unberührt weiter.
+func buildRoutes(cfg *config.Config) ([]broker.Route, []*worker.Worker) {
+	var routes []broker.Route
+	var workers []*worker.Worker
+	for _, rc := range cfg.Routes {
+		if rc.Name == "" {
+			log.Printf("[Route] ohne Namen übersprungen")
+			continue
+		}
+		store, err := storage.InitBadger(filepath.Join(cfg.Storage.Path, "routes", rc.Name))
+		if err != nil {
+			log.Printf("[Route %s] Puffer nicht verfügbar, Route übersprungen: %v", rc.Name, err)
+			continue
+		}
+		var fwd forwarder.Forwarder
+		switch {
+		case rc.Mode == "http":
+			fwd = forwarder.NewHTTPForwarder(rc.HTTP.Endpoint, rc.HTTP.Token)
+		case cfg.MQTT.TimestampMode == "v5_property":
+			fwd = forwarder.NewMQTT5Forwarder(rc.Upstream, rc.Username, rc.Password, rc.TopicAlias, nil)
+		default:
+			fwd = forwarder.NewMQTTForwarder(rc.Upstream, rc.Username, rc.Password, cfg.MQTT.TimestampMode, cfg.MQTT.TimestampField, nil)
+		}
+		routes = append(routes, broker.NewRoute(rc, store))
+		workers = append(workers, worker.New(store, fwd, cfg.Worker))
+		log.Printf("[Route %s] aktiv: Modus %s, %d Gerät(e) (0 = alle)", rc.Name, rc.Mode, len(rc.Devices))
+	}
+	return routes, workers
+}
+

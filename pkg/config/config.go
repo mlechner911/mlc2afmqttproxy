@@ -27,6 +27,34 @@ type Config struct {
 	// Monitor steuert die OPTIONALE Selbst-Überwachung/-Steuerung über den MLC
 	// Sensor Monitor (Heartbeat + Fernsteuerung). Per Default AKTIV.
 	Monitor MonitorConf  `yaml:"monitor"`
+	// Routes sind ZUSÄTZLICHE Upstreams neben dem Haupt-Upstream (mode/mqtt/http oben):
+	// jede mit eigenem Ziel und Zugang (z. B. Ingest-Token eines anderen Mandanten), eigenem
+	// Filter, optional eigener Geräteliste — und eigenem Puffer + Worker, damit ein
+	// unerreichbares Ziel die anderen nicht aufhält. Leer = Verhalten wie bisher.
+	Routes []RouteConf `yaml:"routes,omitempty"`
+}
+
+// RouteConf beschreibt einen zusätzlichen Upstream (siehe Config.Routes).
+type RouteConf struct {
+	// Name identifiziert die Route (Puffer-Verzeichnis <storage.path>/routes/<name>, Logs).
+	Name string `yaml:"name"`
+	// Mode "mqtt" (Default) oder "http".
+	Mode string `yaml:"mode"`
+	// MQTT-Ziel und Zugang (Mode mqtt). Zeitstempel-Modus wie beim Haupt-Upstream.
+	Upstream   string `yaml:"upstream"`
+	Username   string `yaml:"username"`
+	Password   string `yaml:"password"`
+	TopicAlias bool   `yaml:"topic_alias"`
+	// HTTP-Ziel (Mode http).
+	HTTP HTTPConf `yaml:"http"`
+	// Filter wirkt ZUSÄTZLICH zum globalen Filter (mqtt.filter).
+	Filter *FilterConf `yaml:"filter,omitempty"`
+	// Devices: nur diese Zigbee-Geräte (friendly_name oder IEEE-Adresse). Dann gehen nur
+	// <base>/<gerät>[/…] und ein auf diese Geräte GEKÜRZTES <base>/bridge/devices hinaus —
+	// sonst würde das Ziel alle Geräte des Standorts anlegen. Leer = alle (nach Filter).
+	Devices []string `yaml:"devices,omitempty"`
+	// BaseTopic von Zigbee2MQTT (Default "zigbee2mqtt").
+	BaseTopic string `yaml:"base_topic"`
 }
 
 // MonitorConf konfiguriert die optionale Anbindung an den MLC Sensor Monitor:
@@ -183,6 +211,14 @@ func LoadConfig(path string) (*Config, error) {
 	// Default-Werte anwenden, falls nicht gesetzt:
 	if cfg.Mode == "" {
 		cfg.Mode = "mqtt"
+	}
+	for i := range cfg.Routes {
+		if cfg.Routes[i].Mode == "" {
+			cfg.Routes[i].Mode = "mqtt"
+		}
+		if cfg.Routes[i].BaseTopic == "" {
+			cfg.Routes[i].BaseTopic = "zigbee2mqtt"
+		}
 	}
 	if cfg.Storage.Path == "" {
 		cfg.Storage.Path = "./data"

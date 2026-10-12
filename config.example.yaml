@@ -97,3 +97,20 @@ monitor:
   # mqtt.password). Praktisch, wenn mode: "mqtt" ist und der HTTP-Ingest woanders liegt.
   # ingest_url: "http://127.0.0.1:58080/api/v1/ingest"
   # token: "edge-test-7f3a9c12e8"
+
+# Optional: ZUSÄTZLICHE Upstreams (Routen) neben dem Haupt-Upstream oben. Jede Route hat
+# eigenen Zugang (z. B. Ingest-Token eines anderen Mandanten), eigenen Filter und eigenen
+# Puffer + Worker (<storage.path>/routes/<name>) — ein unerreichbares Ziel hält die anderen
+# nicht auf. Mit `devices` gehen nur diese Zigbee-Geräte hinaus (friendly_name, wie es im
+# Topic steht, oder IEEE) und ein auf sie GEKÜRZTES bridge/devices; andere bridge/*-Meldungen
+# (z. B. bridge/info mit der z2m-Konfiguration) gehen über eine Route mit Geräteliste nie hinaus.
+#routes:
+#  - name: demo
+#    upstream: "tcp://127.0.0.1:51883"
+#    username: "demo"
+#    password: "<ingest-token-des-zielmandanten>"
+#    topic_alias: true
+#    devices:
+#      - "0x00158d0000000001"
+#      - "Wohnzimmer Temperatur"
+

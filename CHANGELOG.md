@@ -5,6 +5,7 @@ Alle signifikanten Änderungen an diesem Projekt werden in dieser Datei dokument
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Routen (mehrere Upstreams):** Neuer Konfig-Abschnitt `routes:`. Jede Route ist ein zusätzlicher Upstream mit eigenem Zugang (z. B. Ingest-Token eines anderen Mandanten), eigenem Filter und **eigenem Puffer + Worker** (`<storage.path>/routes/<name>`), damit ein unerreichbares Ziel die anderen nicht aufhält. Optional `devices`: Dann gehen nur diese Zigbee-Geräte hinaus und ein auf sie **gekürztes `bridge/devices`**; andere `bridge/*`-Meldungen gehen über eine Route mit Geräteliste nie hinaus. Ohne `routes:` verhält sich der Proxy wie bisher. Tests: `pkg/broker/routes_test.go`.
 - **Self-Monitoring & Fernsteuerung (optional, standardmäßig an):** Der Proxy meldet sich beim MLC Sensor Monitor als Dienst `svc-edgeproxy` per **Heartbeat** (HTTP-Ingest: `service_up`/`service_state`/`svc_uptime_s`) — fällt er aus, erzeugt der Monitor automatisch ein Ereignis (der Zigbee-Edge-Pfad ist damit lückenlos überwacht). Zusätzlich **Fernsteuerung** über `cmd/svc/<name>` auf dem ohnehin genutzten Upstream-Broker: `pause`/`drain` (Upstream-Versand ruht, Daten bleiben gepuffert — kein Verlust), `resume` (Puffer leeren), `restart`/`stop` (geordnetes Beenden). Bewusst **lose gekoppelt** (kein Import von Monitor-Paketen, reines HTTP+MQTT) und über `monitor.enabled: false` vollständig abschaltbar — der Proxy läuft auch ohne Monitor normal weiter. Neues Paket `pkg/svcmon`, Konfig-Abschnitt `monitor:`, Worker-Pause-Gate (`SetPauseCheck`).
 
 ## [1.0.2] - 2026-06-07

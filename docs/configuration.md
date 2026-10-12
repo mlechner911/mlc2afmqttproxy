@@ -101,7 +101,41 @@ worker:
   retry_min_s: 1
   # (Optional) Maximaler Backoff bei Fehlern oder Verbindungsunterbrechungen in Sekunden (Standard: 60)
   retry_max_s: 60
+
+# (Optional) Zusätzliche Upstreams (Routen) neben dem Haupt-Upstream
+routes:
+  - name: demo                      # Pflicht; Puffer unter <storage.path>/routes/demo
+    mode: "mqtt"                    # "mqtt" (Standard) oder "http"
+    upstream: "tcp://cloud.example.com:1883"
+    username: "demo"
+    password: "<ingest-token>"
+    topic_alias: true
+    # http: { endpoint: "...", token: "..." }   # bei mode: "http"
+    filter:                         # wirkt ZUSÄTZLICH zu mqtt.filter
+      allowed_prefixes: ["zigbee2mqtt/"]
+    devices:                        # nur diese Geräte (friendly_name wie im Topic, oder IEEE)
+      - "0x00158d0000000001"
+    base_topic: "zigbee2mqtt"       # Standard
 ```
+
+### Routen: mehrere Ziele von einem Standort
+
+Ein Standort mit **einem** Zigbee-Netz kann Daten an **mehrere Ziele** geben, etwa an zwei
+Mandanten: das vollständige Testlabor und eine Demo mit ausgewählten Geräten.
+
+- **Eigener Puffer und Worker je Route.** Fällt ein Ziel aus, puffert nur dessen Route; die
+  anderen senden weiter. Kein Datenverlust je Ziel.
+- **Reihenfolge der Regeln:** Zuerst gelten globaler Filter und Entprellung (`mqtt.filter`,
+  `deduplicate_*`). Was dort durchkommt, geht an den Haupt-Upstream und **zusätzlich** an
+  jede Route, deren eigene Regeln es erfüllt.
+- **`devices`:** Dann gehen nur `<base>/<gerät>` und `<base>/<gerät>/…` hinaus (Werte,
+  `availability`, …) sowie ein **auf diese Geräte gekürztes** `<base>/bridge/devices`.
+  Sonst würde das Ziel alle Geräte des Standorts anlegen. Alle anderen `bridge/*`-Meldungen
+  (`bridge/info` enthält die z2m-Konfiguration) gehen über eine Route mit Geräteliste **nie**
+  hinaus. Maßgeblich ist das Topic, also der `friendly_name` aus z2m; die IEEE-Adresse
+  greift, solange friendly_name und IEEE gleich sind (z2m-Standard).
+- **Nicht über Routen:** Downstream (Cloud → lokale Geräte) und die Fernsteuerung laufen nur
+  über den Haupt-Upstream. `pause`/`drain` aus der Fernsteuerung gelten für alle Worker.
 
 ## Architektur-Diagramm nach Betriebsart
 

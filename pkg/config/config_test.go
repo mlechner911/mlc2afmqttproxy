@@ -116,3 +116,30 @@ mqtt:
 		t.Error("Rewrite should be nil when not configured")
 	}
 }
+
+// TestLoadConfig_Routes: Routen bekommen Modus und Basis-Topic als Vorgabe; ohne Routen
+// bleibt alles wie bisher.
+func TestLoadConfig_Routes(t *testing.T) {
+	yaml := `
+mode: "mqtt"
+mqtt:
+  upstream: "tcp://127.0.0.1:51883"
+routes:
+  - name: demo
+    upstream: "tcp://127.0.0.1:51883"
+    username: demo
+    password: geheim
+    devices: ["0xa4c138fb6e98090b"]
+`
+	path := filepath.Join(t.TempDir(), "r.yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Routes) != 1 || cfg.Routes[0].Mode != "mqtt" || cfg.Routes[0].BaseTopic != "zigbee2mqtt" || len(cfg.Routes[0].Devices) != 1 {
+		t.Fatalf("Routen: %+v", cfg.Routes)
+	}
+}

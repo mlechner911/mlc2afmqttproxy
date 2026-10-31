@@ -132,8 +132,12 @@ Mandanten: das vollständige Testlabor und eine Demo mit ausgewählten Geräten.
   `availability`, …) sowie ein **auf diese Geräte gekürztes** `<base>/bridge/devices`.
   Sonst würde das Ziel alle Geräte des Standorts anlegen. Alle anderen `bridge/*`-Meldungen
   (`bridge/info` enthält die z2m-Konfiguration) gehen über eine Route mit Geräteliste **nie**
-  hinaus. Maßgeblich ist das Topic, also der `friendly_name` aus z2m; die IEEE-Adresse
-  greift, solange friendly_name und IEEE gleich sind (z2m-Standard).
+  hinaus. Die Werte kommen unter dem `friendly_name` aus z2m. Ein Eintrag per **IEEE-Adresse**
+  folgt dem Gerät auch nach einem Umbenennen: Die Route liest aus dem jüngsten
+  `bridge/devices`, welchen Namen das Gerät gerade trägt. Bis nach einem Neustart des Proxys
+  die erste Liste eintrifft, greift die IEEE-Adresse nur, solange friendly_name und IEEE
+  gleich sind (z2m-Standard). Ein Eintrag per Anzeigename gilt nur für genau diesen Namen —
+  **IEEE ist deshalb der bessere Eintrag.**
 - **Nicht über Routen:** Downstream (Cloud → lokale Geräte) und die Fernsteuerung laufen nur
   über den Haupt-Upstream. `pause`/`drain` aus der Fernsteuerung gelten für alle Worker.
 

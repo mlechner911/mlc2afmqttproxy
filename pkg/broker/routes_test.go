@@ -46,11 +46,47 @@ func TestRouteAccept(t *testing.T) {
 			t.Errorf("%s: got %v, want %v", c.topic, got, c.want)
 		}
 	}
-	// Anzeigename mit Leerzeichen ist ein eigenes Topic in z2m — per IEEE in der Liste
-	// greift er hier NICHT (friendly_name ist das Topic). Für solche Geräte den
-	// Anzeigenamen in devices eintragen.
+	// Vor der ersten Geräteliste kennt die Route nur ihre Einträge: Das Topic über den
+	// Anzeigenamen passiert (noch) nicht.
 	if _, ok := r.Accept("zigbee2mqtt/MovementSensor 0x00158d0000000b02", []byte(`{}`)); ok {
-		t.Error("Topic über Anzeigenamen darf ohne Eintrag des Anzeigenamens nicht passieren")
+		t.Error("Anzeigename darf vor der ersten Geräteliste nicht passieren")
+	}
+}
+
+// TestRouteFollowsRename: Ein per IEEE eingetragenes Gerät bleibt in der Route, auch wenn es
+// in zigbee2mqtt umbenannt wird — die Route lernt den Namen aus bridge/devices
+// (B-20261012-03). Ein fremdes Gerät gewinnt dabei nichts, auch nicht unter altem Namen.
+func TestRouteFollowsRename(t *testing.T) {
+	r := demoRoute(nil)
+	if _, ok := r.Accept("zigbee2mqtt/bridge/devices", []byte(bridgeDevices)); !ok {
+		t.Fatal("bridge/devices abgelehnt")
+	}
+	if _, ok := r.Accept("zigbee2mqtt/MovementSensor 0x00158d0000000b02", []byte(`{}`)); !ok {
+		t.Error("Anzeigename eines Geräts der Route muss nach der Geräteliste passieren")
+	}
+
+	renamed := `[
+ {"ieee_address":"0x00158d0000000a01","friendly_name":"Kuehlschrank 2","definition":{"model":"SZ-T04"}},
+ {"ieee_address":"0x00158d0000000c03","friendly_name":"MovementSensor 0x00158d0000000b02","definition":{"model":"TS011F_plug_3"}}
+]`
+	if _, ok := r.Accept("zigbee2mqtt/bridge/devices", []byte(renamed)); !ok {
+		t.Fatal("bridge/devices abgelehnt")
+	}
+	cases := []struct {
+		topic string
+		want  bool
+	}{
+		{"zigbee2mqtt/Kuehlschrank 2", true},              // umbenannt, per IEEE eingetragen
+		{"zigbee2mqtt/Kuehlschrank 2/availability", true}, // samt Unter-Topics
+		// Der alte Name gehört jetzt einem fremden Gerät — er fällt mit der neuen Liste weg.
+		{"zigbee2mqtt/MovementSensor 0x00158d0000000b02", false},
+		{"zigbee2mqtt/0x00158d0000000c03", false},
+		{"zigbee2mqtt/0x00158d0000000a01", true}, // der Eintrag selbst gilt weiter
+	}
+	for _, c := range cases {
+		if _, got := r.Accept(c.topic, []byte(`{}`)); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.topic, got, c.want)
+		}
 	}
 }
 

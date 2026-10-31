@@ -3,6 +3,7 @@ package broker
 import (
 	"encoding/json"
 	"strings"
+	"sync"
 
 	"mlc2afmqttproxy/pkg/config"
 	"mlc2afmqttproxy/pkg/storage"
@@ -17,6 +18,27 @@ type Route struct {
 	Filter  *config.FilterConf
 	Base    string
 	devices map[string]bool // friendly_name oder IEEE; leer = alle
+	// names: aktuelle friendly_names der Geräte der Route, aus dem jüngsten bridge/devices.
+	// Die Topics tragen den friendly_name; ein Eintrag per IEEE ließe ein umbenanntes Gerät
+	// sonst nicht mehr durch (B-20261012-03). Zeiger, weil Route als Wert kopiert wird.
+	names *liveNames
+}
+
+type liveNames struct {
+	mu  sync.RWMutex
+	set map[string]bool
+}
+
+func (n *liveNames) has(name string) bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.set[name]
+}
+
+func (n *liveNames) replace(set map[string]bool) {
+	n.mu.Lock()
+	n.set = set
+	n.mu.Unlock()
 }
 
 // NewRoute baut eine Route aus ihrer Konfiguration und ihrem Puffer.
@@ -26,6 +48,7 @@ func NewRoute(rc config.RouteConf, store *storage.Store) Route {
 		r.Base = "zigbee2mqtt"
 	}
 	if len(rc.Devices) > 0 {
+		r.names = &liveNames{}
 		r.devices = make(map[string]bool, len(rc.Devices))
 		for _, d := range rc.Devices {
 			r.devices[d] = true
@@ -48,10 +71,11 @@ func (r Route) Accept(topic string, payload []byte) ([]byte, bool) {
 		return nil, false
 	}
 	if rest == "bridge/devices" {
-		out, err := filterBridgeDevices(payload, r.devices)
+		out, names, err := filterBridgeDevices(payload, r.devices)
 		if err != nil {
 			return nil, false // lieber nichts als die ganze Liste
 		}
+		r.names.replace(names)
 		return out, true
 	}
 	if strings.HasPrefix(rest, "bridge/") {
@@ -63,7 +87,8 @@ func (r Route) Accept(topic string, payload []byte) ([]byte, bool) {
 	if i := strings.IndexByte(rest, '/'); i >= 0 {
 		dev = rest[:i] // <gerät>/availability, <gerät>/set …
 	}
-	return payload, r.devices[dev]
+	// Bis zur ersten Geräteliste gilt nur der Eintrag selbst.
+	return payload, r.devices[dev] || r.names.has(dev)
 }
 
 // prefixAllowed wendet allowed/ignored_prefixes an (nil = alles erlaubt).
@@ -92,12 +117,14 @@ func prefixAllowed(f *config.FilterConf, topic string) bool {
 }
 
 // filterBridgeDevices kürzt die z2m-Geräteliste auf die Geräte der Route. Einträge bleiben
-// unverändert (als rohes JSON), nur die Auswahl ändert sich.
-func filterBridgeDevices(payload []byte, devices map[string]bool) ([]byte, error) {
+// unverändert (als rohes JSON), nur die Auswahl ändert sich. Dazu die friendly_names der
+// behaltenen Geräte — unter denen kommen ihre Werte.
+func filterBridgeDevices(payload []byte, devices map[string]bool) ([]byte, map[string]bool, error) {
 	var all []json.RawMessage
 	if err := json.Unmarshal(payload, &all); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	names := make(map[string]bool, len(devices))
 	keep := make([]json.RawMessage, 0, len(devices))
 	for _, raw := range all {
 		var d struct {
@@ -109,7 +136,9 @@ func filterBridgeDevices(payload []byte, devices map[string]bool) ([]byte, error
 		}
 		if devices[d.Friendly] || devices[d.IEEE] {
 			keep = append(keep, raw)
+			names[d.Friendly] = true
 		}
 	}
-	return json.Marshal(keep)
+	out, err := json.Marshal(keep)
+	return out, names, err
 }

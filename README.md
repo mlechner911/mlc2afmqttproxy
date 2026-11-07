@@ -164,8 +164,12 @@ monitor:
 > `config.yaml` sind Beispiel-/Testwerte; produktiv über die eigene, nicht versionierte
 > Konfiguration setzen.
 
-## Konfiguration
-Alle Parameter und Architektur-Diagramme findest du in der [Konfigurations-Doku](docs/configuration.md).
+## Konfiguration und Betrieb
+- Alle Parameter und Architektur-Diagramme: [Konfigurations-Doku](docs/configuration.md).
+- **Betrieb** — Bedienung, Anmeldung am Upstream, Puffer verstehen, Konfiguration sichern, Update,
+  Sicherheitsauflagen: [docs/betrieb.md](docs/betrieb.md).
+- **Anbindung an den MLC Sensor Monitor** — Ingest-Token (woher, wohin, wechseln), mehrere
+  Mandanten über Routen, Heartbeat und Fernsteuerung: [docs/mlc-sensor-monitor.md](docs/mlc-sensor-monitor.md).
 
 ## Versionierung
 Die Version des Proxys wird beim Bauen (`task build`) automatisch aus deinen Git-Tags abgeleitet und fest in das Binary kompiliert. Sie kann jederzeit über den `GET /api/v1/health` Endpunkt abgefragt werden.

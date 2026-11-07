@@ -1,0 +1,116 @@
+# Betrieb: Bedienung, Anmeldung, Sicherung, Update
+
+[🇬🇧 English](betrieb_en.md) · Konfiguration im Detail: [configuration.md](configuration.md) ·
+Anbindung an den MLC Sensor Monitor (Token, Mandanten): [mlc-sensor-monitor.md](mlc-sensor-monitor.md)
+
+Diese Seite beschreibt den **laufenden Betrieb** des Proxys — für jeden Upstream (eigener
+MQTT-Broker, HTTP-Endpunkt, MLC Sensor Monitor). Was nur für den MLC Sensor Monitor gilt, steht
+auf der eigenen Seite.
+
+## So fließen die Daten
+
+```
+Zigbee-Geräte → zigbee2mqtt → lokaler Broker des Proxys (:1884) → Puffer (BadgerDB, ./data)
+                                                                      → Worker → Upstream
+                                                                      → je Route: eigener Puffer → eigener Upstream
+```
+
+- zigbee2mqtt (oder ein anderer MQTT-Client) **publiziert an den Proxy**, nicht direkt an den
+  Upstream. In z2m: `mqtt.server: mqtt://<host-des-proxys>:1884`.
+- Jede Nachricht landet **zuerst im Puffer** auf der Platte, mit ihrer **Empfangszeit**. Erst
+  dann versucht der Worker, sie weiterzuleiten. Ist der Upstream nicht erreichbar, bleibt sie im
+  Puffer — auch über einen Neustart oder Stromausfall hinweg — und geht später mit der
+  **ursprünglichen Zeit** hinaus (`mqtt.timestamp_mode`).
+- Gelöscht wird eine Nachricht erst, wenn der Upstream sie angenommen hat. Lehnt er sie
+  **dauerhaft** ab (MQTT-5-Reason-Code, etwa ungültiges Topic), wird nur diese eine verworfen;
+  der Rest läuft weiter.
+
+## Anmeldung am Upstream
+
+Der Proxy meldet sich am Upstream so an, wie der Upstream es verlangt. Allgemein:
+
+| Upstream | Wo in `config.yaml` | Bedeutung |
+| :-- | :-- | :-- |
+| MQTT-Broker | `mqtt.upstream`, `mqtt.username`, `mqtt.password` | Benutzer und Passwort, wie der Broker sie prüft |
+| HTTP-Endpunkt | `http.endpoint`, `http.token` | Token als Header (beim MLC Sensor Monitor `X-Ingest-Token`) |
+| Weitere Ziele (Routen) | `routes[].upstream`, `.username`, `.password` | eigener Zugang je Route |
+
+- **Was Benutzer und Passwort bedeuten, bestimmt der Upstream.** Ein üblicher Mosquitto-Broker
+  prüft beides gegen seine Passwortdatei; der MLC Sensor Monitor wertet nur das Passwort aus
+  (Token = Mandant), siehe [mlc-sensor-monitor.md](mlc-sensor-monitor.md).
+- **Zugang falsch oder gesperrt:** Der Upstream lehnt die Verbindung ab. Der Proxy **puffert
+  weiter** (nichts geht verloren), versucht es mit wachsendem Abstand erneut
+  (`worker.retry_min_s` … `retry_max_s`) und schreibt ins Protokoll
+  (`journalctl -u mlc-edge-proxy`). Im Dashboard steigt `messages_forward_failed_total`, der
+  Puffer wächst. Mit dem richtigen Zugang und einem Neustart leert er sich.
+- **Zugang wechseln:** neuen Zugang beim Upstream anlegen, in `config.yaml` eintragen, Proxy
+  neu starten, prüfen (Puffer leert sich, keine Fehler), **dann** den alten Zugang sperren. So
+  gibt es keinen Moment ohne gültigen Zugang.
+- **Zugangsdaten gehören nur in `config.yaml`** — nie in `config.example.yaml`, nie ins Repository
+  (`config.yaml` steht in `.gitignore`). Das Repository ist öffentlich.
+
+## Bedienung
+
+| Was | Wie |
+| :-- | :-- |
+| Starten, Stoppen, Neustart | `sudo systemctl restart mlc-edge-proxy` (Unit: `deployment/proxy.service` bzw. `deploy/systemd/`) |
+| Läuft er, welche Version? | `curl http://127.0.0.1:8097/api/v1/health` → `{"status":"ok","version":"…"}` |
+| Puffer und Zähler | `curl http://127.0.0.1:8097/api/v1/stats` → `buffer_count`, `messages_forwarded_total`, `messages_forward_failed_total` … |
+| Dashboard | `http://<host>:8097/` — Pufferstand, Live-Baum der MQTT-Topics |
+| Protokoll | `journalctl -u mlc-edge-proxy -f` |
+| Versand anhalten/fortsetzen | über den Upstream (beim MLC Sensor Monitor: Seite **Dienste**), siehe dort |
+
+**Puffer lesen:** `buffer_count` 0 = alles weitergeleitet. Wächst er und bleibt
+`messages_forward_failed_total` stehen, ist der Versand angehalten (Pause) — sonst erreicht der
+Proxy den Upstream nicht (Netz, Zugang). Ist der Platz für den Puffer erschöpft
+(`storage.max_size_mb`), nimmt der Proxy **keine neuen** Nachrichten mehr an, statt die SD-Karte
+vollzuschreiben („Tail Drop").
+
+## Konfiguration sichern
+
+`config.yaml` enthält die Zugangsdaten und ist **nicht** im Repository. Geht sie verloren, startet
+der Proxy beim nächsten Neustart nicht — die laufende Instanz merkt davon nichts, erst der
+Neustart (oder ein Stromausfall).
+
+- Nach jeder Änderung eine Kopie **außerhalb** des Repository-Verzeichnisses ablegen, nur für den
+  Dienst-Benutzer lesbar, z. B.:
+  ```bash
+  install -d -m 700 ~/.config/mlc-edge-proxy
+  install -m 600 config.yaml ~/.config/mlc-edge-proxy/config.yaml.$(date +%F)
+  ```
+- **Keine Sicherungskopien im Repository-Verzeichnis** (`config.yaml.bak` …): `.gitignore` deckt
+  nur `config.yaml` ab, ein `git add -A` nähme die Kopie samt Zugangsdaten mit ins öffentliche
+  Repository.
+
+## Update
+
+- **Nie** im Verzeichnis, aus dem der Dienst läuft, `git checkout`, `git switch` oder `git pull`
+  ausführen. `git` überschreibt **ignorierte** Dateien beim Wechsel ohne Warnung — dazu gehört
+  `config.yaml`. (So ist die Konfiguration am 07.11.2026 auf dem Entwicklungsserver verloren
+  gegangen.)
+- Stattdessen: das Paket installieren (`task package` → `build/dist/*.deb|.rpm`), oder in einem
+  **getrennten** Verzeichnis bauen und nur das Programm austauschen:
+  ```bash
+  git worktree add /tmp/proxy-build main && cd /tmp/proxy-build && task build-server
+  install -m 755 bin/mlc-edge-proxy /pfad/zum/dienst/bin/mlc-edge-proxy
+  sudo systemctl restart mlc-edge-proxy
+  ```
+- Der Puffer übersteht das Update. Einträge, die noch im **alten Format** gepuffert sind (vor
+  07.11.2026: Uhrzeit als Schlüssel), werden nach dem Update zuerst und mit ihrer Zeit
+  weitergeleitet.
+- Nach dem Neustart: `health` (Version), `stats` (keine Fehler, Puffer leert sich), Protokoll.
+
+## Sicherheit — Auflagen für den Betrieb
+
+- **Der lokale Broker (`:1884`, WebSocket `:1885`) nimmt jede Verbindung ohne Anmeldung an und
+  lauscht auf allen Schnittstellen.** Wer das Netz der Box erreicht, kann Nachrichten einspeisen,
+  die der Proxy mit gültigem Zugang weiterleitet. Bis das einstellbar ist: Box in einem
+  **abgeschotteten Netz**, Ports 1884/1885/8097 per Firewall nur für zigbee2mqtt bzw. die
+  Verwaltung freigeben. (Offener Punkt der Sicherheitsprüfung.)
+- **Dashboard** (`:8097`, Standard alle Schnittstellen): Anmeldung setzen
+  (`server.username`/`server.password`, HTTP Basic Auth) oder nur lokal erreichbar machen. Es
+  zeigt keine Zugangsdaten, aber den Live-Datenstrom.
+- **Zum Upstream nur verschlüsselt**, sobald die Verbindung das Haus verlässt (`ssl://`/`wss://`
+  bzw. `https://`).
+- Geprüft wird der Proxy bei jeder Version des MLC Sensor Monitor mit (`task edge:check`: vet,
+  Tests, bekannte Schwachstellen, semgrep, Suche nach Zugangsdaten im Repository).

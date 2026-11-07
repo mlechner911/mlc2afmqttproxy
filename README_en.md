@@ -119,8 +119,12 @@ By appending the `--bidi` flag, the tool operates bidirectionally (also routing 
 ```
 Use `./bin/mqttbridge --help` for more options.
 
-## Configuration
-All parameters and architecture diagrams can be found in the [Configuration Documentation](docs/configuration.md).
+## Configuration and operation
+- All parameters and architecture diagrams: [Configuration Documentation](docs/configuration_en.md).
+- **Operation** — usage, authenticating to the upstream, reading the buffer, backing up the
+  configuration, updating, security conditions: [docs/betrieb_en.md](docs/betrieb_en.md).
+- **Connecting to the MLC Sensor Monitor** — ingest token (where from, where to, changing it),
+  several tenants via routes, heartbeat and remote control: [docs/mlc-sensor-monitor_en.md](docs/mlc-sensor-monitor_en.md).
 
 ## Versioning
 The version of the proxy is automatically derived from your Git tags during the build (`task build`) and compiled into the binary. It can be queried at any time via the `GET /api/v1/health` endpoint.

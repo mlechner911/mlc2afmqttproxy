@@ -49,6 +49,10 @@ mqtt:
   # The local port on which the embedded Mochi broker listens for Zigbee2MQTT.
   # Largest accepted message: 1 MiB.
   local_port: 1884
+  # (Optional) Client ID at the upstream. Empty = "mlc2af-proxy-" + the first 12 characters of
+  # /etc/machine-id (else hostname); routes append "-route-<name>", remote control "-ctl". Unique per
+  # box — two boxes with the same ID keep kicking each other off the broker.
+  # client_id: "customer-store-1"
   # Upstream settings (only relevant if mode: "mqtt")
   upstream: "tcp://cloud-broker.example.com:1883"
   username: "user"

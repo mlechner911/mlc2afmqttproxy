@@ -38,6 +38,7 @@ const (
 // Options bündelt die Laufzeit-Parameter des Reporters.
 type Options struct {
 	Device         string        // Gerätename im Monitor, z. B. "svc-edgeproxy"
+	ClientID       string        // Client-ID der Steuer-Verbindung (je Box eindeutig); leer = Device + "-ctl"
 	IngestURL      string        // HTTP-Ingest-Endpunkt (Heartbeat). Leer ⇒ Heartbeat aus.
 	Token          string        // X-Ingest-Token. Leer ⇒ Heartbeat aus.
 	Interval       time.Duration // Heartbeat-Intervall (Default 30 s)
@@ -164,7 +165,7 @@ func (r *Reporter) connectControl(ctx context.Context) {
 	cmdTopic := "cmd/svc/" + r.name
 	opts := mqtt.NewClientOptions().
 		AddBroker(r.o.Broker).
-		SetClientID(r.o.Device + "-ctl").
+		SetClientID(r.ctlClientID()).
 		SetUsername(r.o.Username).
 		SetPassword(r.o.Password).
 		SetAutoReconnect(true).
@@ -244,4 +245,13 @@ func (r *Reporter) ack(action, commandID, status, errMsg string) {
 		"status": status, "error": errMsg, "state": r.state.Load(),
 	})
 	r.client.Publish("cmd/svc/"+r.name+"/ack", 1, false, ack)
+}
+
+// ctlClientID: je Box eindeutig (Options.ClientID). Bis 07.11.2026 fest Device+"-ctl" — zwei
+// Boxen warfen sich am Upstream gegenseitig hinaus (Sicherheitsprüfung P3-04).
+func (r *Reporter) ctlClientID() string {
+	if r.o.ClientID != "" {
+		return r.o.ClientID
+	}
+	return r.o.Device + "-ctl"
 }

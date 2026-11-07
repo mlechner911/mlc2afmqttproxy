@@ -116,6 +116,11 @@ type MQTTConf struct {
 	// (z. B. zigbee2mqtt auf einem anderen Rechner: dort mqtt.user/mqtt.password eintragen).
 	// Von Loopback geht es ohne Anmeldung (Bridge, Dashboard-Tunnel /mqtt, z2m auf der Box).
 	LocalUsers []LocalUser `yaml:"local_users"`
+	// ClientID ist die Grundlage der Client-IDs am Upstream (Haupt-Upstream, Routen, Steuerung).
+	// Leer = "mlc2af-proxy-" + Instanzkennung (aus /etc/machine-id, sonst Hostname). Bis
+	// 07.11.2026 trugen alle Boxen dieselben festen IDs — zwei Boxen am selben Broker warfen sich
+	// gegenseitig hinaus, tausende Male je Minute (Sicherheitsprüfung P3-04).
+	ClientID string `yaml:"client_id"`
 	// LocalPort ist der lokale Port für den TCP Mochi-MQTT Listener (z.B. 1883).
 	LocalPort     int              `yaml:"local_port"`
 	// WsPort ist der Port des WebSocket-Listeners für das Live-Dashboard (z.B. 1885).
@@ -356,4 +361,34 @@ func applySecureDefaults(cfg *Config) error {
 		cfg.Server.Host = "127.0.0.1"
 	}
 	return nil
+}
+
+// machineIDPath ist die Quelle der Instanzkennung (im Test ersetzbar).
+var machineIDPath = "/etc/machine-id"
+
+// InstanceID liefert eine je Rechner stabile, kurze Kennung: die ersten 12 Zeichen von
+// /etc/machine-id, sonst der Hostname, sonst "unknown". Der Hostname allein taugt nicht: Jeder
+// Raspberry Pi heißt ab Werk „raspberrypi".
+func InstanceID() string {
+	if b, err := os.ReadFile(machineIDPath); err == nil {
+		id := strings.TrimSpace(string(b))
+		if len(id) >= 12 {
+			return id[:12]
+		}
+		if id != "" {
+			return id
+		}
+	}
+	if h, err := os.Hostname(); err == nil && h != "" {
+		return h
+	}
+	return "unknown"
+}
+
+// UpstreamClientID ist die Basis-Client-ID dieser Box am Upstream.
+func (c *Config) UpstreamClientID() string {
+	if id := strings.TrimSpace(c.MQTT.ClientID); id != "" {
+		return id
+	}
+	return "mlc2af-proxy-" + InstanceID()
 }

@@ -85,6 +85,12 @@ func run() int {
 		} else {
 			fwd = forwarder.NewMQTTForwarder(cfg.MQTT.Upstream, cfg.MQTT.Username, cfg.MQTT.Password, cfg.MQTT.TimestampMode, cfg.MQTT.TimestampField, cfg.MQTT.TopicRewrite)
 		}
+		// Eigene Client-ID je Box (P3-04): mit festen IDs warfen sich zwei Boxen am selben
+		// Broker gegenseitig hinaus.
+		if cs, ok := fwd.(interface{ SetClientID(string) }); ok {
+			cs.SetClientID(cfg.UpstreamClientID())
+		}
+		log.Printf("Client-ID am Upstream: %s", cfg.UpstreamClientID())
 
 		// Downstream: Topics + Rewrite VOR Connect konfigurieren
 		if cfg.MQTT.Downstream != nil && len(cfg.MQTT.Downstream.SubscribeTopics) > 0 {
@@ -171,6 +177,7 @@ func run() int {
 		}
 		reporter := svcmon.New(svcmon.Options{
 			Device:         cfg.Monitor.Device,
+			ClientID:       cfg.UpstreamClientID() + "-ctl",
 			IngestURL:      cfg.Monitor.IngestURL,
 			Token:          cfg.Monitor.Token,
 			Interval:       time.Duration(cfg.Monitor.IntervalS) * time.Second,
@@ -255,7 +262,7 @@ func buildRoutes(cfg *config.Config) ([]broker.Route, []*worker.Worker) {
 		// Verbindungen gegenseitig hinaus, und der Ziel-Broker ordnet sie womöglich dem
 		// falschen Mandanten zu (12.10.2026).
 		if cs, ok := fwd.(interface{ SetClientID(string) }); ok {
-			cs.SetClientID("mlc2af-proxy-forwarder-route-" + rc.Name)
+			cs.SetClientID(cfg.UpstreamClientID() + "-route-" + rc.Name)
 		}
 		routes = append(routes, broker.NewRoute(rc, store))
 		rw := worker.New(store, fwd, cfg.Worker)

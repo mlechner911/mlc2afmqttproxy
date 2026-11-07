@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+- Fixed 15 reachable known vulnerabilities: Go toolchain go1.26.10, golang.org/x/net v0.60.0, quic-go v0.59.1, klauspost/compress v1.20.2.
+- Removed a former, since revoked ingest token from the commented example in config.example.yaml.
+
 ### Added
 - **Self-monitoring & remote control (optional, on by default):** The proxy registers with the MLC Sensor Monitor as a service `svc-edgeproxy` via a **heartbeat** (HTTP ingest: `service_up`/`service_state`/`svc_uptime_s`) — if it goes down, the monitor raises an event automatically (the Zigbee edge path is fully monitored). It also accepts **remote control** on `cmd/svc/<name>` over the already-used upstream broker: `pause`/`drain` (upstream forwarding halts, data stays buffered — no loss), `resume` (flush the buffer), `restart`/`stop` (graceful exit). Deliberately **loosely coupled** (no import of monitor packages, plain HTTP+MQTT) and fully disableable via `monitor.enabled: false` — the proxy keeps running without the monitor. New package `pkg/svcmon`, config section `monitor:`, worker pause gate (`SetPauseCheck`).
 

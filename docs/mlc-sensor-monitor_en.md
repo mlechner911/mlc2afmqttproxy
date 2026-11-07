@@ -95,6 +95,13 @@ On by default (`monitor.enabled`), can be switched off:
   original times), **Restart**, **Stop**. The proxy receives the commands via the upstream broker it
   already uses (`cmd/svc/edgeproxy`) and acknowledges them. When the proxy is down it cannot take
   commands — the system administrator starts it on the box.
+  - Only the monitor itself sends commands; a device or another access cannot write there
+    (monitor since 7 Nov 2026).
+  - A pause ends on its own after `monitor.max_pause_minutes` (default 60) at the latest — a
+    forgotten pause would otherwise fill the buffer until new values are lost.
+  - A stored (retained) command is not executed: it would come back on every restart.
+  - **Restart** exits with code 75 so that a unit with `Restart=on-failure` restarts as well;
+    **Stop** exits with 0 — the box stays off.
 
 ## Checking that everything arrives
 

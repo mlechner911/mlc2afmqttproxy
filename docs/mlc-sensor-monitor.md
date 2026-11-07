@@ -97,6 +97,14 @@ Standardmäßig aktiv (`monitor.enabled`), abschaltbar:
   den ursprünglichen Zeiten), **Neu starten**, **Stoppen**. Der Proxy empfängt die Befehle über den
   ohnehin genutzten Upstream-Broker (`cmd/svc/edgeproxy`) und bestätigt sie. Ist der Proxy aus,
   nimmt er keine Befehle an — dann startet ihn der System-Administrator auf der Box.
+  - Befehle sendet nur der Monitor selbst; ein Gerät oder ein anderer Zugang kann dort nicht
+    schreiben (Monitor seit 07.11.2026).
+  - Eine Pause endet spätestens nach `monitor.max_pause_minutes` (Standard 60) von selbst — eine
+    vergessene Pause füllte sonst den Puffer, bis neue Werte verloren gehen.
+  - Ein gespeicherter (retained) Befehl wird nicht ausgeführt: Er käme sonst bei jedem Neustart
+    wieder.
+  - **Neu starten** endet mit Exit-Code 75, damit auch eine Unit mit `Restart=on-failure` neu
+    startet; **Stoppen** endet mit 0 — die Box bleibt aus.
 
 ## Prüfen, dass alles ankommt
 

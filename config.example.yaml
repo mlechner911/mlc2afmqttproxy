@@ -103,6 +103,9 @@ monitor:
   device: "svc-edgeproxy"
   # Heartbeat-Intervall in Sekunden.
   interval_s: 30
+  # Höchstdauer einer Pause aus der Fernsteuerung (pause/drain); danach läuft der Versand
+  # von selbst wieder, bevor der Puffer vollläuft. (unges. = 60)
+  max_pause_minutes: 60
   # Optional: abweichendes Heartbeat-Ziel/Token (sonst aus dem http-Block bzw.
   # mqtt.password). Praktisch, wenn mode: "mqtt" ist und der HTTP-Ingest woanders liegt.
   # ingest_url: "http://127.0.0.1:58080/api/v1/ingest"

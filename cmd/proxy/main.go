@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -38,7 +39,18 @@ var Version = "dev"
 // 5. Starten der Worker-Goroutine zum sequentiellen Abarbeiten des Puffers.
 // 6. Starten des Gin-Webservers zur Auslieferung des Svelte-Dashboards und der Status-API.
 // 7. Downstream (optional): Nachrichten vom Upstream-Broker an lokale Clients forwarden.
+// ExitRestart ist der Exit-Code nach einem „restart" aus der Fernsteuerung. Ungleich 0, damit
+// auch eine Unit mit Restart=on-failure (Paket, deployment/proxy.service) neu startet — bis
+// 07.11.2026 endete „restart" mit 0, und die Box blieb aus (Sicherheitsprüfung P3-03).
+// „stop" endet weiter mit 0: Wer stoppt, will die Box aus.
+const ExitRestart = 75
+
 func main() {
+	os.Exit(run())
+}
+
+// run ist der eigentliche Ablauf; der Rückgabewert ist der Exit-Code (die defers laufen vorher).
+func run() int {
 	configPath := flag.String("config", "config.yaml", "Pfad zur Konfigurationsdatei")
 	flag.Parse()
 
@@ -140,6 +152,7 @@ func main() {
 	// 8. Optionale Selbst-Überwachung/-Steuerung über den MLC Sensor Monitor
 	// (Heartbeat raus via HTTP-Ingest, Steuerung rein via cmd/svc/<name> auf dem
 	// Upstream-Broker). Standardmäßig AN; der Proxy läuft auch ohne Monitor weiter.
+	var restartRequested atomic.Bool
 	monCtx, monCancel := context.WithCancel(context.Background())
 	defer monCancel()
 	if cfg.MonitorEnabled() {
@@ -151,6 +164,10 @@ func main() {
 			default:
 			}
 		}
+		triggerRestart := func() {
+			restartRequested.Store(true)
+			triggerShutdown()
+		}
 		reporter := svcmon.New(svcmon.Options{
 			Device:         cfg.Monitor.Device,
 			IngestURL:      cfg.Monitor.IngestURL,
@@ -161,8 +178,9 @@ func main() {
 			Username:       cfg.MQTT.Username,
 			Password:       cfg.MQTT.Password,
 			Version:        Version,
+			MaxPause:       time.Duration(cfg.Monitor.MaxPauseMinutes) * time.Minute,
 			OnStop:         triggerShutdown,
-			OnRestart:      triggerShutdown,
+			OnRestart:      triggerRestart,
 		})
 		// „pause"/„drain" lassen den Upstream-Versand ruhen (Daten bleiben gepuffert).
 		fwWorker.SetPauseCheck(reporter.Paused)
@@ -199,7 +217,12 @@ func main() {
 	_ = mochiBroker.Close()
 
 	log.Println("Datenbank und Worker werden sauber geschlossen...")
-	// defer db.Close() und defer fwWorker.Stop() werden nun beim Verlassen der main() sauber ausgeführt!
+	// defer db.Close() und defer fwWorker.Stop() laufen beim Verlassen von run().
+	if restartRequested.Load() {
+		log.Printf("Neustart angefordert — Exit-Code %d", ExitRestart)
+		return ExitRestart
+	}
+	return 0
 }
 
 // buildRoutes legt für jede zusätzliche Route (config.Routes) Puffer, Forwarder und Worker an.

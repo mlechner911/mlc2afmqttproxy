@@ -46,6 +46,7 @@ type Options struct {
 	Username       string        // Upstream-MQTT-Benutzer (= Proxy-Upstream-Creds)
 	Password       string        // Upstream-MQTT-Passwort / Token
 	Version        string        // Proxy-Version (nur fürs Log)
+	MaxPause       time.Duration // Höchstdauer von „pause"/„drain" (Default 60 min), danach läuft der Versand wieder
 	OnStop         func()        // „stop"  → Proxy geordnet beenden
 	OnRestart      func()        // „restart" → Proxy beenden (Supervisor startet neu)
 }
@@ -55,7 +56,9 @@ type Reporter struct {
 	o      Options
 	name   string // logischer Name (Device ohne "svc-") → cmd/svc/<name>
 	state  atomic.Int32
-	start  time.Time
+	// pauseUntil: Ende der laufenden Pause (UnixNano); 0 = keine
+	pauseUntil atomic.Int64
+	start      time.Time
 	httpc  *http.Client
 	client mqtt.Client
 }
@@ -64,6 +67,9 @@ type Reporter struct {
 func New(o Options) *Reporter {
 	if o.Interval <= 0 {
 		o.Interval = 30 * time.Second
+	}
+	if o.MaxPause <= 0 {
+		o.MaxPause = time.Hour
 	}
 	r := &Reporter{
 		o:     o,
@@ -80,7 +86,22 @@ func New(o Options) *Reporter {
 // derweil im Store&Forward-Puffer, kein Verlust).
 func (r *Reporter) Paused() bool {
 	s := r.state.Load()
-	return s == StatePaused || s == StateDraining
+	if s != StatePaused && s != StateDraining {
+		return false
+	}
+	if until := r.pauseUntil.Load(); until > 0 && time.Now().UnixNano() >= until {
+		if r.state.CompareAndSwap(s, StateRunning) {
+			r.pauseUntil.Store(0)
+			log.Printf("[svcmon] Pause nach %v beendet — Versand läuft wieder (Höchstdauer)", r.o.MaxPause)
+		}
+		return false
+	}
+	return true
+}
+
+func (r *Reporter) pause(state int32) {
+	r.pauseUntil.Store(time.Now().Add(r.o.MaxPause).UnixNano())
+	r.state.Store(state)
 }
 
 // Start fährt Heartbeat (und optional die Steuerung) hoch; läuft bis ctx endet.
@@ -170,6 +191,13 @@ func (r *Reporter) onCommand(_ mqtt.Client, m mqtt.Message) {
 		Action    string `json:"action"`
 		CommandID string `json:"command_id"`
 	}
+	// Ein gespeicherter (retained) Befehl ist kein Befehl, sondern ein Rest: Er käme bei jedem
+	// Verbinden erneut. Ein retained „stop" beendete den Proxy bis 07.11.2026 nach jedem
+	// Neustart sofort wieder (Sicherheitsprüfung P3-03). Befehle gelten nur, wenn sie jetzt kommen.
+	if m.Retained() {
+		log.Printf("[svcmon] gespeicherten Befehl auf %s verworfen (retained)", m.Topic())
+		return
+	}
 	_ = json.Unmarshal(m.Payload(), &cmd)
 	action := strings.TrimSpace(cmd.Action)
 	if action == "" {
@@ -180,11 +208,12 @@ func (r *Reporter) onCommand(_ mqtt.Client, m mqtt.Message) {
 	var post func()
 	switch action {
 	case "pause":
-		r.state.Store(StatePaused)
+		r.pause(StatePaused)
 	case "resume":
+		r.pauseUntil.Store(0)
 		r.state.Store(StateRunning)
 	case "drain":
-		r.state.Store(StateDraining)
+		r.pause(StateDraining)
 	case "stop":
 		post = r.o.OnStop
 	case "restart":

@@ -75,6 +75,10 @@ type MonitorConf struct {
 	Device string `yaml:"device"`
 	// IntervalS ist das Heartbeat-Intervall in Sekunden (Default 30).
 	IntervalS int `yaml:"interval_s"`
+	// MaxPauseMinutes begrenzt „pause"/„drain" aus der Fernsteuerung (Default 60). Danach läuft
+	// der Versand von selbst wieder an — eine vergessene Pause füllte bis 07.11.2026 den Puffer
+	// bis zum Tail-Drop, und dann gingen neue Messwerte verloren (Sicherheitsprüfung P3-03).
+	MaxPauseMinutes int `yaml:"max_pause_minutes"`
 	// IngestURL ist der HTTP-Ingest-Endpunkt für den Heartbeat. Leer = HTTP.Endpoint.
 	IngestURL string `yaml:"ingest_url"`
 	// Token ist das X-Ingest-Token für den Heartbeat. Leer = HTTP.Token bzw. MQTT.Password.
@@ -296,6 +300,9 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Monitor.IntervalS == 0 {
 		cfg.Monitor.IntervalS = 30
+	}
+	if cfg.Monitor.MaxPauseMinutes <= 0 {
+		cfg.Monitor.MaxPauseMinutes = 60
 	}
 	if cfg.Monitor.IngestURL == "" {
 		cfg.Monitor.IngestURL = cfg.HTTP.Endpoint

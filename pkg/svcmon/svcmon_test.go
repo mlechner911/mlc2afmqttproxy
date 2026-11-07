@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 // TestName prüft die Ableitung des cmd/svc-Namens aus dem Gerätenamen.
@@ -77,5 +78,67 @@ func TestHeartbeat(t *testing.T) {
 	}
 	if _, ok := vals["svc_uptime_s"]; !ok {
 		t.Fatal("svc_uptime_s fehlt")
+	}
+}
+
+// fakeMsg ist eine eingehende Steuer-Nachricht.
+type fakeMsg struct {
+	payload  string
+	retained bool
+}
+
+func (m fakeMsg) Duplicate() bool   { return false }
+func (m fakeMsg) Qos() byte         { return 1 }
+func (m fakeMsg) Retained() bool    { return m.retained }
+func (m fakeMsg) Topic() string     { return "cmd/svc/edgeproxy" }
+func (m fakeMsg) MessageID() uint16 { return 1 }
+func (m fakeMsg) Payload() []byte   { return []byte(m.payload) }
+func (m fakeMsg) Ack()              {}
+
+// TestRetainedCommandIgnored (P3-03): Ein gespeicherter Befehl käme bei jedem Verbinden erneut —
+// ein retained „stop" beendete den Proxy nach jedem Neustart. Er wird verworfen.
+func TestRetainedCommandIgnored(t *testing.T) {
+	stopped := make(chan struct{}, 1)
+	r := New(Options{Device: "svc-edgeproxy", OnStop: func() { stopped <- struct{}{} }})
+	r.onCommand(nil, fakeMsg{payload: `{"action":"stop"}`, retained: true})
+	r.onCommand(nil, fakeMsg{payload: `{"action":"pause"}`, retained: true})
+	select {
+	case <-stopped:
+		t.Fatal("retained stop ausgeführt")
+	case <-time.After(700 * time.Millisecond):
+	}
+	if r.Paused() {
+		t.Fatal("retained pause ausgeführt")
+	}
+	r.onCommand(nil, fakeMsg{payload: `{"action":"stop"}`})
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("frischer stop nicht ausgeführt")
+	}
+}
+
+// TestPauseEndsAfterMaxPause (P3-03): Eine vergessene Pause füllte den Puffer bis zum Tail-Drop.
+// Nach der Höchstdauer läuft der Versand von selbst wieder; resume hebt sie sofort auf.
+func TestPauseEndsAfterMaxPause(t *testing.T) {
+	for _, action := range []string{"pause", "drain"} {
+		r := New(Options{Device: "svc-edgeproxy", MaxPause: 150 * time.Millisecond})
+		r.onCommand(nil, fakeMsg{payload: `{"action":"` + action + `"}`})
+		if !r.Paused() {
+			t.Fatalf("%s: nicht pausiert", action)
+		}
+		time.Sleep(200 * time.Millisecond)
+		if r.Paused() {
+			t.Fatalf("%s: nach Höchstdauer noch pausiert", action)
+		}
+		if r.state.Load() != StateRunning {
+			t.Fatalf("%s: Zustand %d, want läuft", action, r.state.Load())
+		}
+	}
+	r := New(Options{Device: "svc-edgeproxy", MaxPause: time.Hour})
+	r.onCommand(nil, fakeMsg{payload: `{"action":"pause"}`})
+	r.onCommand(nil, fakeMsg{payload: `{"action":"resume"}`})
+	if r.Paused() {
+		t.Fatal("resume hebt die Pause nicht auf")
 	}
 }

@@ -117,7 +117,7 @@ func (w *Worker) runBatch() {
 // 1. Prüft, ob ein Backoff aktiv ist.
 // 2. Verbindung zum Upstream sicherstellen.
 // 3. Ältesten Puffer-Eintrag aus BadgerDB lesen.
-// 4. Zeitstempel aus dem Datenbankschlüssel (RFC3339Nano) dekodieren.
+// 4. Zeitstempel aus dem Eintrag lesen (alte Einträge: aus dem Schlüssel, RFC3339Nano).
 // 5. Nachricht über Forwarder senden.
 // 6. Bei erfolgreichem Versand: Eintrag aus der BadgerDB löschen.
 // Gibt zurück, ob eine Nachricht erfolgreich verarbeitet wurde (processed) und ggf. einen Fehler.
@@ -154,11 +154,12 @@ func (w *Worker) processNext() (bool, error) {
 		return true, nil // true zurückgeben, da dieser Tabelleneintrag erledigt (gelöscht) ist
 	}
 
-	// Zeitstempel aus dem Key rekonstruieren
-	var ts time.Time
-	ts, err = time.Parse(time.RFC3339Nano, string(key))
+	// Messzeit: aus dem Eintrag (seit 07.11.2026); Einträge im alten Format tragen sie im Schlüssel.
+	ts, err := time.Parse(time.RFC3339Nano, wrapper.Time)
 	if err != nil {
-		ts = time.Now()
+		if ts, err = time.Parse(time.RFC3339Nano, string(key)); err != nil {
+			ts = time.Now()
+		}
 	}
 
 	// 5. Nachricht an Upstream senden

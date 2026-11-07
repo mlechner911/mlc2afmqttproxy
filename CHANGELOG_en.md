@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Buffer: entries could stay stuck until restart, leave out of order, or overwrite each other on equal timestamps; keys are now a persistent sequence number with the receive time stored in the entry.
+
 ### Security
 - Fixed 15 reachable known vulnerabilities: Go toolchain go1.26.10, golang.org/x/net v0.60.0, quic-go v0.59.1, klauspost/compress v1.20.2.
 - Removed a former, since revoked ingest token from the commented example in config.example.yaml.

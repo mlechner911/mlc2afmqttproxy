@@ -4,6 +4,7 @@ package storage
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"log"
 	"sync"
@@ -33,6 +34,50 @@ type Store struct {
 	// Leer-Check (PeekFirst) und das Dashboard (GetSize) NICHT iterieren müssen —
 	// sonst scannen sie bei leerer Queue jedes Mal den Tombstone-Friedhof (100% CPU).
 	count atomic.Int64
+
+	// seq ist die zuletzt vergebene laufende Nummer (Append). Schlüssel = neuPrefix + 8 Byte
+	// Big-Endian — eindeutig und streng steigend in Ankunftsreihenfolge, unabhängig von der Uhr.
+	seq atomic.Uint64
+}
+
+// neuPrefix markiert Schlüssel mit laufender Nummer (seit 07.11.2026). '~' (0x7E) sortiert hinter
+// den alten Zeit-Schlüsseln („2026-…", Ziffern): Was beim Update noch im alten Format im Puffer
+// liegt, ist älter und geht zuerst hinaus.
+//
+// Warum nicht mehr die Uhrzeit als Schlüssel: RFC3339Nano lässt Nullen am Ende weg („…00.1Z",
+// „…00.12Z"), als Text sortiert das nicht nach der Zeit; ein Eintrag hinter der Lese-Marke blieb
+// bis zum Neustart liegen, gleiche Zeitstempel überschrieben einander (Nachricht weg), und stellt
+// NTP die Uhr zurück, landete alles Neue hinter der Marke (Tests in badger_test.go).
+const neuPrefix = '~'
+
+// SchluesselIstNummer meldet, ob ein Schlüssel eine laufende Nummer ist (sonst: altes Zeitformat).
+func SchluesselIstNummer(key []byte) bool { return len(key) == 9 && key[0] == neuPrefix }
+
+// Append legt einen Eintrag mit der nächsten laufenden Nummer ab und liefert seinen Schlüssel.
+func (s *Store) Append(val []byte) ([]byte, error) {
+	key := make([]byte, 9)
+	key[0] = neuPrefix
+	binary.BigEndian.PutUint64(key[1:], s.seq.Add(1))
+	return key, s.Push(key, val)
+}
+
+// letzteNummer: die höchste vergebene laufende Nummer im Puffer (0 = keine) — nach einem Neustart
+// geht die Zählung dort weiter, statt bestehende Einträge zu überschreiben.
+func (s *Store) letzteNummer() uint64 {
+	var n uint64
+	_ = s.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.Reverse = true
+		opts.PrefetchValues = false
+		it := txn.NewIterator(opts)
+		defer it.Close()
+		it.Seek([]byte{neuPrefix, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
+		if it.Valid() && SchluesselIstNummer(it.Item().Key()) {
+			n = binary.BigEndian.Uint64(it.Item().Key()[1:])
+		}
+		return nil
+	})
+	return n
 }
 
 // seekStart positioniert den Iterator ab dem Low-Watermark (überspringt den
@@ -110,6 +155,7 @@ func InitBadger(path string) (*Store, error) {
 	if n, err := store.scanCount(); err == nil {
 		store.count.Store(int64(n))
 	}
+	store.seq.Store(store.letzteNummer())
 	log.Printf("BadgerDB initialisiert in %s (%d gepuffert)", path, store.count.Load())
 	return store, nil
 }
@@ -256,7 +302,12 @@ func (s *Store) GetRecent(limit int) ([]map[string]any, error) {
 			err := item.Value(func(v []byte) error {
 				var data map[string]any
 				if err := json.Unmarshal(v, &data); err == nil {
-					data["_timestamp"] = string(item.Key())
+					// Zeit steht im Eintrag („time"); alte Einträge tragen sie im Schlüssel.
+					if t, ok := data["time"].(string); ok && t != "" {
+						data["_timestamp"] = t
+					} else {
+						data["_timestamp"] = string(item.Key())
+					}
 					result = append(result, data)
 				}
 				return nil

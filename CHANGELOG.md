@@ -4,6 +4,9 @@ Alle signifikanten Änderungen an diesem Projekt werden in dieser Datei dokument
 
 ## [Unreleased]
 
+### Behoben
+- **Puffer: Einträge blieben liegen, Reihenfolge falsch, gleiche Zeitstempel überschrieben einander.** Der Schlüssel war die Empfangszeit als RFC3339Nano — das Format lässt Nullen am Ende weg („…00.1Z", „…00.12Z") und sortiert als Text nicht nach der Zeit. Folgen: Ein später angekommener Eintrag lag hinter der Lese-Marke und wurde erst nach einem Neustart weitergeleitet; Einträge derselben Sekunde gingen in falscher Reihenfolge hinaus; zwei Nachrichten mit gleichem Zeitstempel (grobe Uhr, mehrere Geräte zugleich) — eine ging verloren; stellte NTP die Uhr zurück, blieb alles Neue liegen. Jetzt ist der Schlüssel eine laufende Nummer (zählt nach Neustart weiter), die Empfangszeit steht im Eintrag (`time`). Einträge im alten Format werden beim Update zuerst und mit der Zeit aus dem Schlüssel weitergeleitet. Tests: `pkg/storage/badger_test.go`, `pkg/worker/worker_test.go` (bisher ohne Tests).
+
 ### Sicherheit
 - **Bekannte Schwachstellen behoben:** Go-Werkzeugkette `go1.26.10` (Standardbibliothek: `net/http`, `crypto/tls`, `crypto/x509`, `html/template`, `net/textproto`), `golang.org/x/net` v0.60.0, `quic-go` v0.59.1, `klauspost/compress` v1.20.2 — 15 erreichbare Schwachstellen laut govulncheck, erreichbar über Dashboard und HTTP-Weiterleitung. Geprüft wird der Proxy seit 07.11.2026 mit `task edge:check` aus dem MLC Sensor Monitor.
 - **Kein echtes Token im Beispiel:** `config.example.yaml` trug ein früheres, inzwischen widerrufenes Ingest-Token als Kommentar; jetzt ein Platzhalter.

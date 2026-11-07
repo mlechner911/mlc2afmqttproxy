@@ -102,14 +102,19 @@ Neustart (oder ein Stromausfall).
 
 ## Sicherheit — Auflagen für den Betrieb
 
-- **Der lokale Broker (`:1884`, WebSocket `:1885`) nimmt jede Verbindung ohne Anmeldung an und
-  lauscht auf allen Schnittstellen.** Wer das Netz der Box erreicht, kann Nachrichten einspeisen,
-  die der Proxy mit gültigem Zugang weiterleitet. Bis das einstellbar ist: Box in einem
-  **abgeschotteten Netz**, Ports 1884/1885/8097 per Firewall nur für zigbee2mqtt bzw. die
-  Verwaltung freigeben. (Offener Punkt der Sicherheitsprüfung.)
-- **Dashboard** (`:8097`, Standard alle Schnittstellen): Anmeldung setzen
-  (`server.username`/`server.password`, HTTP Basic Auth) oder nur lokal erreichbar machen. Es
-  zeigt keine Zugangsdaten, aber den Live-Datenstrom.
+- **Der lokale Broker (`:1884`, WebSocket `:1885`) lauscht nur auf `127.0.0.1`** (`mqtt.bind`).
+  Was dort ankommt, leitet der Proxy mit gültigem Zugang in den Nachweis weiter — bis 07.11.2026
+  nahm er jede Verbindung von überall ohne Anmeldung an. Läuft zigbee2mqtt auf einem anderen
+  Rechner: `mqtt.bind` auf die Adresse der Box und ein Konto in `mqtt.local_users` (in z2m
+  `mqtt.user`/`mqtt.password`); ohne Konto startet der Proxy dann nicht. Von Loopback geht es
+  weiter ohne Anmeldung.
+- **Dashboard** (`:8097`): ohne `server.username`/`server.password` nur auf `127.0.0.1`; mit
+  Anmeldung auf `server.host`. Der Live-Datenstrom (`/mqtt`) geht nur über das Dashboard und nur
+  von derselben Herkunft (Schutz gegen fremde Webseiten im Browser). Anmeldung ist HTTP Basic
+  Auth — über das LAN unverschlüsselt; außerhalb eines vertrauten Netzes nur über einen
+  verschlüsselten Zugang (VPN, SSH-Tunnel).
+- **Ein vorgeschalteter Broker** (z. B. mosquitto mit `mqttbridge --bidi`) braucht dieselbe
+  Sorgfalt: Was ihn erreicht, erreicht über die Bridge auch den Proxy.
 - **Zum Upstream nur verschlüsselt**, sobald die Verbindung das Haus verlässt (`ssl://`/`wss://`
   bzw. `https://`).
 - Geprüft wird der Proxy bei jeder Version des MLC Sensor Monitor mit (`task edge:check`: vet,

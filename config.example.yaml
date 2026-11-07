@@ -5,9 +5,11 @@ server:
   # Wenn false, wird das Web-Dashboard und die API (Port 8097) komplett deaktiviert.
   enable: true
   port: 8097
-  # (Optional) HTTP Basic Auth für das Dashboard und die API:
+  # Anmeldung (HTTP Basic Auth) für Dashboard und API. OHNE Passwort lauscht das Dashboard
+  # nur auf 127.0.0.1 (am Gerät selbst); mit Passwort auf host (Standard alle Schnittstellen).
+  # host: "0.0.0.0"
   # username: "admin"
-  # password: "secret-password"
+  # password: "CHANGEME"
 
 storage:
   path: "./data"
@@ -17,6 +19,14 @@ storage:
 
 mqtt:
   # Lokaler Broker, an den Zigbee2MQTT publiziert (z2m mqtt.server hierauf zeigen).
+  # Was hier ankommt, geht mit dem Ingest-Token in den Nachweis — deshalb nur lokal:
+  # bind 127.0.0.1 (Standard) für z2m bzw. mqttbridge auf derselben Box. Läuft z2m auf
+  # einem anderen Rechner: bind auf die Adresse der Box UND ein Konto (local_users; in z2m
+  # mqtt.user/mqtt.password) — ohne Konto startet der Proxy dann nicht.
+  bind: "127.0.0.1"
+  # local_users:
+  #   - username: "z2m"
+  #     password: "CHANGEME"
   local_port: 1884
   ws_port: 1885
   # Upstream = MLC Sensor Monitor (eigener eingebetteter Broker). Gleicher Host →

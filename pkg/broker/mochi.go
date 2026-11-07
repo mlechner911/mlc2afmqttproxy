@@ -5,9 +5,10 @@ package broker
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"log"
+	"net"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,7 +19,6 @@ import (
 	"mlc2afmqttproxy/pkg/storage"
 
 	mqtt "github.com/mochi-mqtt/server/v2"
-	"github.com/mochi-mqtt/server/v2/hooks/auth"
 	"github.com/mochi-mqtt/server/v2/listeners"
 	"github.com/mochi-mqtt/server/v2/packets"
 )
@@ -216,11 +216,16 @@ func isPayloadEffectivelyEqual(a, b []byte, ignoreKeys []string) bool {
 // 1. TCP Listener: Auf diesem Port (standardmäßig 1883) lauschen wir auf lokale Geräte wie Zigbee2MQTT.
 // 2. WebSocket Listener: Auf diesem Port (standardmäßig 1885) verbinden sich Web-Clients wie das Svelte Dashboard.
 // Der Registrierte StoreHook stellt sicher, dass alle Publish-Nachrichten persistent gespeichert werden.
-func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config.FilterConf, dedupInterval int, dedupIgnoreKeys []string, maxDbSizeMB int, routes ...Route) (*mqtt.Server, error) {
-	server := mqtt.New(nil)
+func StartLocalBroker(bind string, users []config.LocalUser, port int, wsPort int, store *storage.Store, filter *config.FilterConf, dedupInterval int, dedupIgnoreKeys []string, maxDbSizeMB int, routes ...Route) (*mqtt.Server, error) {
+	// Größte Nachricht: z2m-Zustände sind < 4 KiB, bridge/devices mit vielen Geräten einige 100 KiB.
+	// Bis 07.11.2026 unbegrenzt — eine 100-MB-Nachricht wurde angenommen, kostete fast 1 GB Speicher
+	// und ging danach still verloren, weil die Datenbank sie ablehnte (Sicherheitsprüfung P3-08).
+	server := mqtt.New(&mqtt.Options{Capabilities: localCapabilities()})
 
-	// Anonyme Verbindungen erlauben (wichtig für lokale, einfache IoT-Geräte)
-	_ = server.AddHook(new(auth.AllowHook), nil)
+	// Anmeldung: von Loopback frei, von außen nur mit Konto (auth.go). Vorher auth.AllowHook.
+	if err := server.AddHook(NewLocalAuthHook(users), nil); err != nil {
+		return nil, err
+	}
 
 	hook := &StoreHook{
 		store:           store,
@@ -258,7 +263,7 @@ func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config
 	}()
 
 	// Lokaler TCP Listener einrichten
-	address := fmt.Sprintf(":%d", port)
+	address := net.JoinHostPort(bind, strconv.Itoa(port))
 	err := server.AddListener(listeners.NewTCP(listeners.Config{
 		ID:      "tcp-local",
 		Address: address,
@@ -268,7 +273,7 @@ func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config
 	}
 
 	// Lokaler WebSocket Listener für das Live Dashboard einrichten
-	wsAddress := fmt.Sprintf(":%d", wsPort)
+	wsAddress := net.JoinHostPort(bind, strconv.Itoa(wsPort))
 	err = server.AddListener(listeners.NewWebsocket(listeners.Config{
 		ID:      "ws-local",
 		Address: wsAddress,
@@ -287,5 +292,14 @@ func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config
 	}()
 
 	return server, nil
+}
+
+// MaxLocalPacketSize ist die größte Nachricht, die der lokale Broker annimmt (1 MiB).
+const MaxLocalPacketSize = 1 << 20
+
+func localCapabilities() *mqtt.Capabilities {
+	c := mqtt.NewDefaultServerCapabilities()
+	c.MaximumPacketSize = MaxLocalPacketSize
+	return c
 }
 

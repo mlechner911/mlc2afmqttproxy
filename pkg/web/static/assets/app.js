@@ -17,8 +17,6 @@ const elMetrics = {
     failed: document.getElementById('metric-failed')
 };
 
-// SVG Icons
-const dotIcon = `<svg class="toggle-icon" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4"/></svg>`;
 
 // Tree State
 const openPaths = new Set();
@@ -212,57 +210,102 @@ function updateTree(topic, payload) {
 }
 
 // Tree Rendering
-function createNodeHtml(key, val, path) {
+//
+// Gebaut über DOM-Funktionen und textContent, nie über innerHTML: Topic-Namen, JSON-Schlüssel
+// und Werte kommen von jedem, der am lokalen Broker veröffentlichen kann. Bis 07.11.2026 gingen
+// sie roh in innerHTML und in ein Inline-onclick — ein Topic wie
+// `zigbee2mqtt/<img src=x onerror=…>` führte Code im Browser des Betrachters aus
+// (Sicherheitsprüfung P3-06). Ohne Inline-Handler gilt auch die strenge CSP des Servers.
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function icon(chevron, open) {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('class', 'toggle-icon' + (chevron && open ? ' open' : ''));
+    svg.setAttribute('viewBox', '0 0 24 24');
+    if (chevron) {
+        svg.setAttribute('fill', 'none');
+        svg.setAttribute('stroke', 'currentColor');
+        svg.setAttribute('stroke-width', '2');
+        const p = document.createElementNS(SVG_NS, 'path');
+        p.setAttribute('d', 'M9 18l6-6-6-6');
+        svg.appendChild(p);
+    } else {
+        svg.setAttribute('fill', 'currentColor');
+        const c = document.createElementNS(SVG_NS, 'circle');
+        c.setAttribute('cx', '12'); c.setAttribute('cy', '12'); c.setAttribute('r', '4');
+        svg.appendChild(c);
+    }
+    return svg;
+}
+
+function span(cls, text) {
+    const el = document.createElement('span');
+    if (cls) el.className = cls;
+    el.textContent = text;
+    return el;
+}
+
+function valueNode(val) {
+    if (typeof val === 'string') {
+        const el = span('node-val-string', `"${val}"`);
+        el.title = val;
+        return el;
+    }
+    if (typeof val === 'number') return span('node-val-number', String(val));
+    if (typeof val === 'boolean') return span('node-val-boolean', String(val));
+    if (val === null) return span('node-val-null', 'null');
+    return span('node-val-string', String(val));
+}
+
+function createNode(key, val, path) {
     const isObj = val !== null && typeof val === 'object' && !Array.isArray(val);
     const hasChildren = isObj && Object.keys(val).length > 0;
     const currentPath = path ? `${path}/${key}` : key;
     const isOpen = openPaths.has(currentPath) || key === 'root';
-    
-    let valHtml = '';
+
+    const node = document.createElement('div');
+    node.className = 'tree-node';
+    const header = document.createElement('div');
+    header.className = 'tree-node-header';
+    header.addEventListener('click', () => toggleNode(header, currentPath));
+    header.appendChild(icon(hasChildren, isOpen));
+    header.appendChild(span('node-key', key));
     if (!isObj) {
-        if (typeof val === 'string') {
-            const escapedVal = val.replace(/"/g, '&quot;');
-            valHtml = `<span class="node-val-string" title="${escapedVal}">"${escapedVal}"</span>`;
-        }
-        else if (typeof val === 'number') valHtml = `<span class="node-val-number">${val}</span>`;
-        else if (typeof val === 'boolean') valHtml = `<span class="node-val-boolean">${val}</span>`;
-        else if (val === null) valHtml = `<span class="node-val-null">null</span>`;
-        else valHtml = `<span class="node-val-string">${val}</span>`;
+        const wrap = span('ms-2', ': ');
+        wrap.appendChild(valueNode(val));
+        header.appendChild(wrap);
     }
-
-    const chevronSvg = `<svg class="toggle-icon ${isOpen ? 'open' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>`;
-
-    let html = `<div class="tree-node">
-        <div class="tree-node-header" onclick="toggleNode(this, '${currentPath}')">
-            ${hasChildren ? chevronSvg : dotIcon}
-            <span class="node-key">${key}</span>
-            ${!isObj ? `<span class="ms-2">: ${valHtml}</span>` : ''}
-        </div>
-        <div class="node-children ${isOpen ? 'open' : ''}">`;
-
+    const children = document.createElement('div');
+    children.className = 'node-children' + (isOpen ? ' open' : '');
     if (hasChildren) {
         for (const [k, v] of Object.entries(val)) {
-            html += createNodeHtml(k, v, currentPath);
+            children.appendChild(createNode(k, v, currentPath));
         }
     }
-
-    html += `</div></div>`;
-    return html;
+    node.appendChild(header);
+    node.appendChild(children);
+    return node;
 }
 
 function renderTree() {
     if (Object.keys(treeData).length === 0) return;
-    
-    let html = '';
+    const frag = document.createDocumentFragment();
     for (const [k, v] of Object.entries(treeData)) {
-        html += createNodeHtml(k, v, '');
+        frag.appendChild(createNode(k, v, ''));
     }
-    treeContainer.innerHTML = html;
+    treeContainer.replaceChildren(frag);
+}
+
+function showWaiting() {
+    const el = document.createElement('div');
+    el.className = 'text-muted text-center py-5';
+    el.textContent = 'Waiting for MQTT messages...';
+    treeContainer.replaceChildren(el);
 }
 
 document.getElementById('clear-tree-btn').addEventListener('click', () => {
     for (const key in treeData) delete treeData[key];
-    treeContainer.innerHTML = '<div class="text-muted text-center py-5">Waiting for MQTT messages...</div>';
+    showWaiting();
 });
 
 // Boot

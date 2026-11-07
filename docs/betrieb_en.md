@@ -98,14 +98,19 @@ cut) does.
 
 ## Security — operating conditions
 
-- **The local broker (`:1884`, WebSocket `:1885`) accepts every connection without authentication
-  and listens on all interfaces.** Anyone who reaches the box's network can inject messages, which
-  the proxy forwards with valid credentials. Until this is configurable: run the box in an
-  **isolated network** and allow ports 1884/1885/8097 by firewall only for zigbee2mqtt and
-  administration. (Open item of the security review.)
-- **Dashboard** (`:8097`, all interfaces by default): set a login
-  (`server.username`/`server.password`, HTTP basic auth) or make it local only. It shows no
-  credentials, but the live data stream.
+- **The local broker (`:1884`, WebSocket `:1885`) listens on `127.0.0.1` only** (`mqtt.bind`).
+  Whatever arrives there is forwarded with valid credentials into the records — until 7 Nov 2026
+  it accepted any connection from anywhere without authentication. If zigbee2mqtt runs on another
+  machine: set `mqtt.bind` to the box's address and an account in `mqtt.local_users` (in z2m
+  `mqtt.user`/`mqtt.password`); without an account the proxy then refuses to start. Loopback
+  connections still need no login.
+- **Dashboard** (`:8097`): without `server.username`/`server.password` only on `127.0.0.1`; with
+  a login on `server.host`. The live stream (`/mqtt`) is only available through the dashboard and
+  only from the same origin (protection against foreign web pages in the browser). The login is
+  HTTP basic auth — unencrypted over the LAN; outside a trusted network use an encrypted access
+  (VPN, SSH tunnel).
+- **An upstream broker in front** (e.g. mosquitto with `mqttbridge --bidi`) needs the same care:
+  whatever reaches it reaches the proxy through the bridge.
 - **Encrypt the connection to the upstream** as soon as it leaves the premises (`ssl://`/`wss://`
   or `https://`).
 - The proxy is checked with every MLC Sensor Monitor release (`task edge:check`: vet, tests, known

@@ -101,7 +101,7 @@ func main() {
 
 	// 4. Mochi MQTT Broker starten
 	log.Printf("Lokal-Broker lauscht auf TCP :%d und WebSocket :%d", cfg.MQTT.LocalPort, cfg.MQTT.WsPort)
-	mochiBroker, err := broker.StartLocalBroker(cfg.MQTT.LocalPort, cfg.MQTT.WsPort, db, cfg.MQTT.Filter, cfg.MQTT.DeduplicateIntervalMs, cfg.MQTT.DeduplicateIgnoreKeys, cfg.Storage.MaxSizeMB, routes...)
+	mochiBroker, err := broker.StartLocalBroker(cfg.MQTT.Bind, cfg.MQTT.LocalUsers, cfg.MQTT.LocalPort, cfg.MQTT.WsPort, db, cfg.MQTT.Filter, cfg.MQTT.DeduplicateIntervalMs, cfg.MQTT.DeduplicateIgnoreKeys, cfg.Storage.MaxSizeMB, routes...)
 	if err != nil {
 		log.Fatalf("Fehler beim Mochi Broker: %v", err)
 	}

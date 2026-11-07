@@ -3,6 +3,9 @@
 package config
 
 import (
+	"fmt"
+	"log"
+	"net"
 	"os"
 	"strings"
 
@@ -99,6 +102,16 @@ type StorageConf struct {
 
 // MQTTConf enthält Konfigurationen für die MQTT-Listener sowie die MQTT-Upstream-Verbindung.
 type MQTTConf struct {
+	// Bind ist die Adresse, auf der der lokale Broker lauscht (TCP und WebSocket). Standard
+	// 127.0.0.1: zigbee2mqtt bzw. die mqttbridge laufen auf derselben Box. Bis 07.11.2026
+	// lauschte der Broker fest auf allen Schnittstellen und ohne Anmeldung — wer das Netz der Box
+	// erreichte, konnte Messwerte einspeisen, die mit dem echten Token in den Mandanten gingen
+	// (Sicherheitsprüfung P3-01/P3-02). Eine andere Adresse verlangt LocalUsers.
+	Bind string `yaml:"bind"`
+	// LocalUsers sind die Konten am lokalen Broker für Verbindungen, die NICHT von Loopback kommen
+	// (z. B. zigbee2mqtt auf einem anderen Rechner: dort mqtt.user/mqtt.password eintragen).
+	// Von Loopback geht es ohne Anmeldung (Bridge, Dashboard-Tunnel /mqtt, z2m auf der Box).
+	LocalUsers []LocalUser `yaml:"local_users"`
 	// LocalPort ist der lokale Port für den TCP Mochi-MQTT Listener (z.B. 1883).
 	LocalPort     int              `yaml:"local_port"`
 	// WsPort ist der Port des WebSocket-Listeners für das Live-Dashboard (z.B. 1885).
@@ -165,11 +178,18 @@ type HTTPConf struct {
 	Token    string `yaml:"token"`
 }
 
+// LocalUser ist ein Konto am lokalen Broker.
+type LocalUser struct {
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+}
+
 // ServerConf konfiguriert den Diagnose-Webserver.
 type ServerConf struct {
 	// Enable steuert, ob der Webserver überhaupt gestartet werden soll (Standard: true).
 	Enable bool `yaml:"enable"`
 	// Host definiert das Interface, auf dem der Webserver lauscht (Standard: 0.0.0.0 für alle IPs).
+	// Ohne Username/Password lauscht das Dashboard nur auf 127.0.0.1 (siehe applySecureDefaults).
 	Host string `yaml:"host"`
 	// Port ist der Port, unter dem das Dashboard und die API erreichbar sind (Standard: 8080).
 	Port int `yaml:"port"`
@@ -225,6 +245,9 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Storage.MaxSizeMB == 0 {
 		cfg.Storage.MaxSizeMB = 1024
+	}
+	if cfg.MQTT.Bind == "" {
+		cfg.MQTT.Bind = "127.0.0.1"
 	}
 	if cfg.MQTT.LocalPort == 0 {
 		cfg.MQTT.LocalPort = 1883
@@ -285,5 +308,45 @@ func LoadConfig(path string) (*Config, error) {
 		}
 	}
 
+	if err := applySecureDefaults(&cfg); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
+}
+
+// IsLoopbackHost meldet, ob eine Bind-Adresse nur lokal erreichbar ist (127.0.0.0/8, ::1,
+// localhost). Leer und 0.0.0.0/:: sind ALLE Schnittstellen — also nicht lokal.
+func IsLoopbackHost(host string) bool {
+	h := strings.Trim(strings.TrimSpace(host), "[]")
+	if strings.EqualFold(h, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
+}
+
+// applySecureDefaults setzt die Zugangsregeln fail closed durch (Sicherheitsprüfung 07.11.2026):
+//   - Lokaler Broker auf einer Nicht-Loopback-Adresse ohne Konten → Start verweigert. Sonst nähme
+//     er aus dem Netz jede Nachricht an und leitete sie mit dem echten Token weiter.
+//   - Dashboard ohne Passwort → nur auf 127.0.0.1 (statt abzuschalten: Daten laufen weiter, die
+//     Diagnose bleibt am Gerät selbst möglich). Mit Passwort auf der eingestellten Adresse.
+func applySecureDefaults(cfg *Config) error {
+	if !IsLoopbackHost(cfg.MQTT.Bind) {
+		n := 0
+		for _, u := range cfg.MQTT.LocalUsers {
+			if u.Username != "" && u.Password != "" {
+				n++
+			}
+		}
+		if n == 0 {
+			return fmt.Errorf("mqtt.bind=%q ist von außen erreichbar, aber mqtt.local_users ist leer — "+
+				"der lokale Broker nähme jede Nachricht an und leitete sie mit dem Ingest-Token weiter. "+
+				"Konto eintragen oder bind: 127.0.0.1", cfg.MQTT.Bind)
+		}
+	}
+	if cfg.Server.Enable && !IsLoopbackHost(cfg.Server.Host) && (cfg.Server.Username == "" || cfg.Server.Password == "") {
+		log.Printf("WARNUNG: Dashboard ohne server.username/password — lauscht nur auf 127.0.0.1 statt %q", cfg.Server.Host)
+		cfg.Server.Host = "127.0.0.1"
+	}
+	return nil
 }

@@ -20,13 +20,14 @@ mode: "http"
 server:
   # (Optional) Wenn false, wird das Web-Dashboard komplett deaktiviert (Standard: true)
   enable: true
-  # (Optional) Die IP-Adresse, an die der Webserver gebunden werden soll (Standard: "0.0.0.0" für alle Interfaces)
+  # (Optional) Die IP-Adresse, an die der Webserver gebunden werden soll (Standard: "0.0.0.0" für alle Interfaces).
+  # Ohne username/password gilt immer 127.0.0.1 — ein Dashboard ohne Anmeldung ist nie von außen erreichbar.
   host: "0.0.0.0"
   # Der Port für das Diagnostik-Web-Dashboard und die Health-API
   port: 8097
   # (Optional) Pfad-Präfix für die Diagnose-REST-API (Standard: "/api/v1")
   api_prefix: "/api/v1"
-  # (Optional) Basic Auth Schutz für das komplette Web-Dashboard und die API
+  # Basic Auth für das komplette Web-Dashboard und die API (Pflicht für Zugriff von außen)
   # username: "admin"
   # password: "secret-password"
 
@@ -37,7 +38,15 @@ storage:
   max_size_mb: 1024
 
 mqtt:
-  # Der lokale Port, auf dem der eingebettete Mochi-Broker für Zigbee2MQTT lauscht
+  # Adresse des eingebetteten Brokers (TCP und WebSocket). Standard 127.0.0.1: z2m bzw. mqttbridge
+  # auf derselben Box. Von Loopback geht es ohne Anmeldung, von jeder anderen Adresse nur mit einem
+  # Konto aus local_users. Ist bind von außen erreichbar und local_users leer, startet der Proxy nicht.
+  bind: "127.0.0.1"
+  # local_users:
+  #   - username: "z2m"          # in zigbee2mqtt: mqtt.user / mqtt.password
+  #     password: "secret-password"
+  # Der lokale Port, auf dem der eingebettete Mochi-Broker für Zigbee2MQTT lauscht.
+  # Größte angenommene Nachricht: 1 MiB.
   local_port: 1884
   # Upstream-Einstellungen (nur relevant wenn mode: "mqtt")
   upstream: "tcp://cloud-broker.example.com:1883"

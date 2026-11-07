@@ -21,13 +21,14 @@ mode: "http"
 server:
   # (Optional) If false, the web dashboard is completely disabled (Default: true)
   enable: true
-  # (Optional) The IP address the web server should bind to (Default: "0.0.0.0" for all interfaces)
+  # (Optional) The IP address the web server should bind to (Default: "0.0.0.0" for all interfaces).
+  # Without username/password it is always 127.0.0.1 — a dashboard without login is never reachable from outside.
   host: "0.0.0.0"
   # The port for the diagnostic web dashboard and the health API
   port: 8097
   # (Optional) Path prefix for the diagnostic REST API (Default: "/api/v1")
   api_prefix: "/api/v1"
-  # (Optional) Basic Auth protection for the entire web dashboard and API
+  # Basic auth for the entire web dashboard and API (required for access from outside)
   # username: "admin"
   # password: "secret-password"
 
@@ -38,7 +39,15 @@ storage:
   max_size_mb: 1024
 
 mqtt:
-  # The local port on which the embedded Mochi broker listens for Zigbee2MQTT
+  # Address of the embedded broker (TCP and WebSocket). Default 127.0.0.1: z2m or mqttbridge on the
+  # same box. Loopback connections need no login, any other address only with an account from
+  # local_users. If bind is reachable from outside and local_users is empty, the proxy refuses to start.
+  bind: "127.0.0.1"
+  # local_users:
+  #   - username: "z2m"          # in zigbee2mqtt: mqtt.user / mqtt.password
+  #     password: "secret-password"
+  # The local port on which the embedded Mochi broker listens for Zigbee2MQTT.
+  # Largest accepted message: 1 MiB.
   local_port: 1884
   # Upstream settings (only relevant if mode: "mqtt")
   upstream: "tcp://cloud-broker.example.com:1883"

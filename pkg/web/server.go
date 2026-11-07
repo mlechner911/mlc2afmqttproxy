@@ -4,9 +4,12 @@ package web
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 	"embed"
 	"io/fs"
@@ -102,25 +105,28 @@ var staticFS embed.FS
 // an den lokalen Mochi-MQTT Broker weiter und registriert die JSON-APIs.
 // Startet den Server in einer Goroutine und gibt das *http.Server Objekt für Graceful Shutdown zurück.
 func StartServer(cfg *config.Config, store *storage.Store, version string, startTime time.Time) *http.Server {
-	r := gin.Default()
+	gin.SetMode(gin.ReleaseMode)
+	r := gin.New()
+	r.Use(gin.Logger(), gin.Recovery())
+	_ = r.SetTrustedProxies(nil) // keine X-Forwarded-For-Angaben übernehmen
 
-	// Optional: HTTP Basic Auth für das Dashboard und die API aktivieren
+	// HTTP Basic Auth für Dashboard und API. Ohne Passwort lauscht der Server nur auf 127.0.0.1
+	// (config.applySecureDefaults) — bis 07.11.2026 auf allen Schnittstellen ohne Anmeldung.
 	if cfg.Server.Username != "" && cfg.Server.Password != "" {
 		r.Use(gin.BasicAuth(gin.Accounts{
 			cfg.Server.Username: cfg.Server.Password,
 		}))
 	}
 
-	// CORS Middleware: Da das API Read-Only ist, erlauben wir per Default alle Anfragen
+	// Sicherheits-Header. Kein CORS mehr: Bis 07.11.2026 stand hier Access-Control-Allow-Origin "*"
+	// — jede fremde Webseite im Browser eines Nutzers im LAN konnte Konfiguration, Statistik und
+	// Puffer abfragen (Sicherheitsprüfung P3-10). Das Dashboard läuft auf derselben Herkunft.
 	r.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Accept")
-		
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(http.StatusNoContent)
-			return
-		}
+		h := c.Writer.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Content-Security-Policy", "default-src 'self'; connect-src 'self' ws: wss:; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
 		c.Next()
 	})
 
@@ -150,9 +156,20 @@ func StartServer(cfg *config.Config, store *storage.Store, version string, start
 	r.GET("/config", GetConfigHandler(cfg, startTime))
 
 	// WebSocket-Verbindungen (für das Live-Dashboard) transparent an den Mochi Broker tunneln (Port 1885)
-	wsTarget, _ := url.Parse(fmt.Sprintf("http://localhost:%d", cfg.MQTT.WsPort))
+	// Ziel ist der WebSocket-Listener des lokalen Brokers (mqtt.bind, Standard 127.0.0.1). Die
+	// Verbindung kommt dort von Loopback an und braucht keine Broker-Anmeldung — geschützt wird sie
+	// hier: Dashboard-Anmeldung und Origin-Prüfung (gegen Cross-Site-WebSocket-Hijacking, P3-02).
+	wsHost := cfg.MQTT.Bind
+	if wsHost == "" || wsHost == "0.0.0.0" || wsHost == "::" {
+		wsHost = "127.0.0.1"
+	}
+	wsTarget, _ := url.Parse("http://" + net.JoinHostPort(wsHost, strconv.Itoa(cfg.MQTT.WsPort)))
 	wsProxy := httputil.NewSingleHostReverseProxy(wsTarget)
 	r.GET("/mqtt", func(c *gin.Context) {
+		if !sameOrigin(c.Request) {
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
 		wsProxy.ServeHTTP(c.Writer, c.Request)
 	})
 
@@ -175,3 +192,17 @@ func StartServer(cfg *config.Config, store *storage.Store, version string, start
 	return srv
 }
 
+// sameOrigin lässt den WebSocket-Tunnel nur für Seiten derselben Herkunft zu: Origin fehlt (kein
+// Browser) oder sein Host gleicht dem angefragten Host. Browser senden beim WebSocket-Aufbau
+// immer einen Origin — eine fremde Seite trägt dort ihre eigene Adresse.
+func sameOrigin(r *http.Request) bool {
+	o := r.Header.Get("Origin")
+	if o == "" {
+		return true
+	}
+	u, err := url.Parse(o)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return strings.EqualFold(u.Host, r.Host)
+}

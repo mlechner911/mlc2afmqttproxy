@@ -24,7 +24,7 @@ mqtt:
   upstream: "tcp://127.0.0.1:51883"
   username: "CHANGEME"
   # MUSS einem Eintrag in INGEST_TOKENS des Backends entsprechen (deploy/.env).
-  # password: "60b03cfaddba96981b03490549f707a00332573bc84091b792d42687a1b0bac6"
+  # password: "<Ingest-Token aus INGEST_TOKENS bzw. Betreiber-Konsole>"
 
     # Der Mandant, unter dem dieser Proxy einliefert — nicht der oeffentliche.
   password: "CHANGEME"

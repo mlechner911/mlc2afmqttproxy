@@ -1,7 +1,8 @@
 // Package main ist der Haupteinstiegspunkt für den MLC2AF MQTT Proxy.
 // Der Proxy fungiert als lokaler MQTT-Broker (Mochi MQTT), puffert eingehende
 // Nachrichten in einer BadgerDB und leitet sie per Worker-Goroutine (Store & Forward)
-// entweder via HTTP oder Upstream-MQTT weiter.
+// entweder via HTTP oder Upstream-MQTT weiter. Zusätzlich unterstützt er Downstream-Routing
+// (Cloud → lokale Clients) mit Loop-Detection.
 package main
 
 import (
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 	"mlc2afmqttproxy/pkg/config"
 	"mlc2afmqttproxy/pkg/forwarder"
 	"mlc2afmqttproxy/pkg/storage"
+	"mlc2afmqttproxy/pkg/svcmon"
 	"mlc2afmqttproxy/pkg/web"
 	"mlc2afmqttproxy/pkg/worker"
 )
@@ -34,6 +37,7 @@ var Version = "dev"
 // 4. Starten des lokalen Mochi-MQTT-Brokers (inkl. WebSocket-Listener für das Live-Dashboard).
 // 5. Starten der Worker-Goroutine zum sequentiellen Abarbeiten des Puffers.
 // 6. Starten des Gin-Webservers zur Auslieferung des Svelte-Dashboards und der Status-API.
+// 7. Downstream (optional): Nachrichten vom Upstream-Broker an lokale Clients forwarden.
 func main() {
 	configPath := flag.String("config", "config.yaml", "Pfad zur Konfigurationsdatei")
 	flag.Parse()
@@ -54,11 +58,14 @@ func main() {
 	}
 	defer db.Close()
 
-	// 3. Upstream-Forwarder initialisieren
+	// 3. Upstream-Forwarder initialisieren (VOR dem Mochi-Broker, damit Subscribe() vor Connect() läuft)
 	var fwd forwarder.Forwarder
 	if cfg.Mode == "http" {
 		// HTTP-Modus nutzt die MLC-Sensor-Monitor Ingest-Schnittstelle
 		fwd = forwarder.NewHTTPForwarder(cfg.HTTP.Endpoint, cfg.HTTP.Token)
+		if cfg.MQTT.Downstream != nil && len(cfg.MQTT.Downstream.SubscribeTopics) > 0 {
+			log.Printf("[Downstream] Hinweis: Downstream wird im HTTP-Modus nicht unterstützt")
+		}
 	} else {
 		// MQTT-Modus leitet an einen externen Cloud- oder Master-Broker weiter
 		if cfg.MQTT.TimestampMode == "v5_property" {
@@ -66,18 +73,41 @@ func main() {
 		} else {
 			fwd = forwarder.NewMQTTForwarder(cfg.MQTT.Upstream, cfg.MQTT.Username, cfg.MQTT.Password, cfg.MQTT.TimestampMode, cfg.MQTT.TimestampField, cfg.MQTT.TopicRewrite)
 		}
+
+		// Downstream: Topics + Rewrite VOR Connect konfigurieren
+		if cfg.MQTT.Downstream != nil && len(cfg.MQTT.Downstream.SubscribeTopics) > 0 {
+			// Rewrite zuerst setzen (wird im handlePublishReceived gebraucht)
+			if cfg.MQTT.Downstream.Rewrite != nil {
+				mqttfwd, ok := fwd.(interface{ SetDownRewrite(*config.TopicRewriteConf) })
+				if ok {
+					mqttfwd.SetDownRewrite(cfg.MQTT.Downstream.Rewrite)
+					log.Printf("[Downstream] Topic Rewrite: %s → %s", cfg.MQTT.Downstream.Rewrite.MatchPrefix, cfg.MQTT.Downstream.Rewrite.ReplaceWith)
+				}
+			}
+			// Topics registrieren (Handler kommt später nach Mochi-Setup)
+			if err := fwd.Subscribe(cfg.MQTT.Downstream.SubscribeTopics, nil); err != nil {
+				log.Printf("[Downstream] Subscribe-Konfiguration fehlgeschlagen: %v", err)
+			} else {
+				log.Printf("[Downstream] Topics registriert: %d (Handler wird nach Mochi-Setup gesetzt)", len(cfg.MQTT.Downstream.SubscribeTopics))
+			}
+		}
+	}
+
+	// 3b. Zusätzliche Routen: je Route eigener Puffer, Forwarder und Worker (config.Routes).
+	routes, routeWorkers := buildRoutes(cfg)
+	for _, rdb := range routes {
+		defer rdb.Store.Close()
 	}
 
 	// 4. Mochi MQTT Broker starten
 	log.Printf("Lokal-Broker lauscht auf TCP :%d und WebSocket :%d", cfg.MQTT.LocalPort, cfg.MQTT.WsPort)
-	mochiBroker, err := broker.StartLocalBroker(cfg.MQTT.LocalPort, cfg.MQTT.WsPort, db, cfg.MQTT.Filter, cfg.MQTT.DeduplicateIntervalMs, cfg.MQTT.DeduplicateIgnoreKeys, cfg.Storage.MaxSizeMB)
+	mochiBroker, err := broker.StartLocalBroker(cfg.MQTT.LocalPort, cfg.MQTT.WsPort, db, cfg.MQTT.Filter, cfg.MQTT.DeduplicateIntervalMs, cfg.MQTT.DeduplicateIgnoreKeys, cfg.Storage.MaxSizeMB, routes...)
 	if err != nil {
 		log.Fatalf("Fehler beim Mochi Broker: %v", err)
 	}
 
-	// 5. Forward Worker im Hintergrund starten
+	// 5. Forward Worker erzeugen (Start erst nach dem optionalen Pause-Hook, s. u.)
 	fwWorker := worker.New(db, fwd, cfg.Worker)
-	fwWorker.Start()
 	defer fwWorker.Stop()
 
 	// 6. Diagnose-Webserver und Live-Dashboard auf dem konfigurierten Port starten
@@ -89,11 +119,68 @@ func main() {
 		log.Println("Diagnose-Webserver ist deaktiviert (server.enable = false).")
 	}
 
+	// 7. Downstream-Handler setzen (nach Mochi-Broker-Setup)
+	if cfg.MQTT.Downstream != nil && len(cfg.MQTT.Downstream.SubscribeTopics) > 0 && cfg.Mode == "mqtt" {
+		downstreamHandler := func(topic string, payload []byte) {
+			if err := mochiBroker.Publish(topic, payload, false, 1); err != nil {
+				log.Printf("[Downstream] Publish an lokalen Broker fehlgeschlagen: %v", err)
+			} else {
+				log.Printf("[Downstream] Forwarded an lokale Clients: Topic='%s', %d bytes", topic, len(payload))
+			}
+		}
+		fwd.SetDownstreamHandler(downstreamHandler)
+		log.Printf("[Downstream] Handler aktiv — Cloud → lokale Clients")
+	}
+
 	// --- Graceful Shutdown Setup ---
 	quit := make(chan os.Signal, 1)
 	// kill (ohne Parameter) sendet SIGTERM, Strg+C sendet SIGINT
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	
+
+	// 8. Optionale Selbst-Überwachung/-Steuerung über den MLC Sensor Monitor
+	// (Heartbeat raus via HTTP-Ingest, Steuerung rein via cmd/svc/<name> auf dem
+	// Upstream-Broker). Standardmäßig AN; der Proxy läuft auch ohne Monitor weiter.
+	monCtx, monCancel := context.WithCancel(context.Background())
+	defer monCancel()
+	if cfg.MonitorEnabled() {
+		// stop/restart aus der Ferne lösen denselben geordneten Shutdown aus wie ein
+		// Signal; ein Supervisor (systemd Restart=always / docker) startet danach neu.
+		triggerShutdown := func() {
+			select {
+			case quit <- syscall.SIGTERM:
+			default:
+			}
+		}
+		reporter := svcmon.New(svcmon.Options{
+			Device:         cfg.Monitor.Device,
+			IngestURL:      cfg.Monitor.IngestURL,
+			Token:          cfg.Monitor.Token,
+			Interval:       time.Duration(cfg.Monitor.IntervalS) * time.Second,
+			ControlEnabled: cfg.MonitorControlEnabled(),
+			Broker:         cfg.MQTT.Upstream,
+			Username:       cfg.MQTT.Username,
+			Password:       cfg.MQTT.Password,
+			Version:        Version,
+			OnStop:         triggerShutdown,
+			OnRestart:      triggerShutdown,
+		})
+		// „pause"/„drain" lassen den Upstream-Versand ruhen (Daten bleiben gepuffert).
+		fwWorker.SetPauseCheck(reporter.Paused)
+		for _, rw := range routeWorkers {
+			rw.SetPauseCheck(reporter.Paused)
+		}
+		reporter.Start(monCtx)
+	} else {
+		log.Println("[svcmon] Monitor-Anbindung deaktiviert (monitor.enabled = false).")
+	}
+
+	// 9. Forward-Worker jetzt starten (Pause-Hook ist gesetzt).
+	fwWorker.Start()
+	for _, rw := range routeWorkers {
+		rw.Start()
+		defer rw.Stop()
+	}
+
 	sig := <-quit
 	log.Printf("Signal %v empfangen. Beende Proxy geordnet (Graceful Shutdown)...", sig)
 
@@ -101,17 +188,55 @@ func main() {
 		// Context mit Timeout für den Webserver-Shutdown (max 5 Sekunden)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		
+
 		if err := srv.Shutdown(ctx); err != nil {
 			log.Printf("Webserver Shutdown fehlerhaft: %v", err)
 		}
 		log.Println("Webserver gestoppt.")
 	}
-	
+
 	log.Println("Stoppe Mochi MQTT Broker...")
 	_ = mochiBroker.Close()
 
 	log.Println("Datenbank und Worker werden sauber geschlossen...")
 	// defer db.Close() und defer fwWorker.Stop() werden nun beim Verlassen der main() sauber ausgeführt!
+}
+
+// buildRoutes legt für jede zusätzliche Route (config.Routes) Puffer, Forwarder und Worker an.
+// Eine Route, deren Puffer sich nicht öffnen lässt, wird übersprungen (mit Log) — der
+// Haupt-Upstream läuft davon unberührt weiter.
+func buildRoutes(cfg *config.Config) ([]broker.Route, []*worker.Worker) {
+	var routes []broker.Route
+	var workers []*worker.Worker
+	for _, rc := range cfg.Routes {
+		if rc.Name == "" {
+			log.Printf("[Route] ohne Namen übersprungen")
+			continue
+		}
+		store, err := storage.InitBadger(filepath.Join(cfg.Storage.Path, "routes", rc.Name))
+		if err != nil {
+			log.Printf("[Route %s] Puffer nicht verfügbar, Route übersprungen: %v", rc.Name, err)
+			continue
+		}
+		var fwd forwarder.Forwarder
+		switch {
+		case rc.Mode == "http":
+			fwd = forwarder.NewHTTPForwarder(rc.HTTP.Endpoint, rc.HTTP.Token)
+		case cfg.MQTT.TimestampMode == "v5_property":
+			fwd = forwarder.NewMQTT5Forwarder(rc.Upstream, rc.Username, rc.Password, rc.TopicAlias, nil)
+		default:
+			fwd = forwarder.NewMQTTForwarder(rc.Upstream, rc.Username, rc.Password, cfg.MQTT.TimestampMode, cfg.MQTT.TimestampField, nil)
+		}
+		// Eigene Client-ID je Route: Mit derselben ID wie der Haupt-Upstream werfen sich die
+		// Verbindungen gegenseitig hinaus, und der Ziel-Broker ordnet sie womöglich dem
+		// falschen Mandanten zu (12.10.2026).
+		if cs, ok := fwd.(interface{ SetClientID(string) }); ok {
+			cs.SetClientID("mlc2af-proxy-forwarder-route-" + rc.Name)
+		}
+		routes = append(routes, broker.NewRoute(rc, store))
+		workers = append(workers, worker.New(store, fwd, cfg.Worker))
+		log.Printf("[Route %s] aktiv: Modus %s, %d Gerät(e) (0 = alle)", rc.Name, rc.Mode, len(rc.Devices))
+	}
+	return routes, workers
 }
 

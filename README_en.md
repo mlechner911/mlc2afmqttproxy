@@ -1,5 +1,8 @@
 # MLC Edge Proxy
 
+> **[mlcgo.eu](https://mlcgo.eu)** — tools, libraries and manuals
+
+
 ![MLC Edge Proxy Banner](docs/banner.png)
 
 [🇩🇪 Lies dies auf Deutsch](README.md)
@@ -52,6 +55,8 @@ Whether you are forwarding IoT data centrally to the cloud or integrating it int
   > **Note on Timestamps & Zigbee2MQTT:** If you are not using our own MLC backend, you should enable the `last_seen` option (as `epoch`) in Zigbee2MQTT. You can then set `timestamp_field: "last_seen"` in the proxy configuration. The proxy will act as a clean polyfill and only insert its reception time if Zigbee2MQTT hasn't provided a value yet.
 
   * **Topic Rewrite:** Optionally, an incoming topic prefix (`match_prefix`) can be replaced with another (`replace_with`) during MQTT forwarding (e.g., from `zigbee2mqtt/` to `/v1/bridgedataxxx/`).
+* **Downstream Routing (Cloud → Local):** Messages from the upstream broker can be forwarded to local MQTT clients (e.g., to control actuators from the cloud). Loop detection via `origin` property prevents infinite loops. See `mqtt.downstream_config` in the configuration.
+* **Self-monitoring & remote control (optional, on by default):** The proxy registers with the MLC Sensor Monitor as a service (`svc-edgeproxy`) via heartbeat and is **remotely controllable** (pause/resume/restart/stop). If it goes down, the monitor raises an event automatically — so the Zigbee-critical edge path is fully monitored. Deliberately **loosely coupled** (no code import, plain HTTP+MQTT) and disableable via `monitor.enabled: false`; the proxy keeps running without the monitor. `pause`/`drain` keep incoming data safely buffered (no loss). See the `monitor:` section in `config.yaml`.
 * **Health & Diagnostics**: Built-in web dashboard (Port `8097`) displays the live buffer level and status information (`/api/v1/health` returns the version).
 * **Fail-Safe**: Out-of-the-box systemd deployment for autostart after power failures.
 * **Best Practice Setup**: For a detailed overview of the optimal, fail-safe hardware setup, see [Best Setup & Integration (German)](docs/best_setup.md).
@@ -128,3 +133,8 @@ This license ensures the mandatory attribution of the original author. Anyone wh
 
 ## Changelog
 All release notes and changes can be found in the [CHANGELOG_en.md](CHANGELOG_en.md).
+
+<!-- mlcai-private -->
+## Project documentation (`.mlcai/`)
+
+`.mlcai/` is a **private git submodule**: internal planning, backlog and work notes, maintained with the MLC Doc Hub. It is not publicly accessible — clone **without** `--recurse-submodules`; the build does not need it. Links into `.mlcai/` only work with access (`git submodule update --init .mlcai`).

@@ -1,0 +1,22 @@
+# Codebase-Memory (cbm) — settings for this checkout.
+#
+# Written by 'cbm index' so the index belongs to this project rather than to the
+# directory it happens to sit in. Without a name here, cbm derives one from the
+# directory, and the same repository cloned elsewhere would silently build a
+# second index instead of finding the first.
+#
+# This file LAYERS on top of your machine-wide configuration
+# (~/.config/cbm/config.yaml): only the keys named here override it, everything
+# else is inherited. Keep it small, and commit it — it describes the project,
+# not the machine.
+
+app:
+  name: "mlc2afmqttproxy"
+
+# Language of this repository's contents, if it is not English. The embedding
+# model compares a query against the corpus as written, so the search tools are
+# told which language to ask in.
+#
+# search:
+#   code_language: "en"   # identifiers and comments
+#   docs_language: "de"   # the markdown in this repo

@@ -1,0 +1,19 @@
+[Unit]
+# Edge-Proxy: nimmt Zigbee2MQTT lokal an (eigener Mochi-Broker) und leitet an den
+# Sensor-Monitor-Upstream weiter (MQTT5 + HTTP-Ingest-Heartbeat). OHNE diese Unit
+# startet der Proxy nach einem Reboot NICHT — dann reißt die z2m-Datenkette ab.
+Description=MLC Edge-Proxy — z2m/MQTT-Bridge zum Sensor-Monitor-Upstream
+After=network-online.target mlc-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mlc
+# WorkingDirectory ist Pflicht: der Proxy liest config.yaml relativ zum Repo-Root.
+WorkingDirectory=/opt/mlc2afmqttproxy
+ExecStart=/opt/mlc2afmqttproxy/bin/mlc-edge-proxy
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

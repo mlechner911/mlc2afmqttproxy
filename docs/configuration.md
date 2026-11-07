@@ -74,6 +74,16 @@ mqtt:
       - "zigbee2mqtt/bridge/logging"
       - "zigbee2mqtt/bridge/state"
 
+ # Downstream: Nachrichten vom Upstream-Broker an lokale Clients forwarden (optional).
+ # Damit können z.B. Aktor-Commands aus der Cloud an lokale Geräte gesendet werden.
+ # Der Proxy vermeidet Endlosschleifen durch "origin"-Marker im Nachrichten-Header.
+ #downstream_config:
+ #  subscribe_topics:
+ #     - "cloud/commands/+"
+ #  rewrite:
+ #    match_prefix: "cloud/commands/zigbee2mqtt/"
+ #    replace_with: "zigbee2mqtt/"
+
 http:
   # Upstream-Einstellungen (nur relevant wenn mode: "http")
   endpoint: "https://api.example.com/ingest"
@@ -91,7 +101,45 @@ worker:
   retry_min_s: 1
   # (Optional) Maximaler Backoff bei Fehlern oder Verbindungsunterbrechungen in Sekunden (Standard: 60)
   retry_max_s: 60
+
+# (Optional) Zusätzliche Upstreams (Routen) neben dem Haupt-Upstream
+routes:
+  - name: demo                      # Pflicht; Puffer unter <storage.path>/routes/demo
+    mode: "mqtt"                    # "mqtt" (Standard) oder "http"
+    upstream: "tcp://cloud.example.com:1883"
+    username: "demo"
+    password: "<ingest-token>"
+    topic_alias: true
+    # http: { endpoint: "...", token: "..." }   # bei mode: "http"
+    filter:                         # wirkt ZUSÄTZLICH zu mqtt.filter
+      allowed_prefixes: ["zigbee2mqtt/"]
+    devices:                        # nur diese Geräte (friendly_name wie im Topic, oder IEEE)
+      - "0x00158d0000000001"
+    base_topic: "zigbee2mqtt"       # Standard
 ```
+
+### Routen: mehrere Ziele von einem Standort
+
+Ein Standort mit **einem** Zigbee-Netz kann Daten an **mehrere Ziele** geben, etwa an zwei
+Mandanten: das vollständige Testlabor und eine Demo mit ausgewählten Geräten.
+
+- **Eigener Puffer und Worker je Route.** Fällt ein Ziel aus, puffert nur dessen Route; die
+  anderen senden weiter. Kein Datenverlust je Ziel.
+- **Reihenfolge der Regeln:** Zuerst gelten globaler Filter und Entprellung (`mqtt.filter`,
+  `deduplicate_*`). Was dort durchkommt, geht an den Haupt-Upstream und **zusätzlich** an
+  jede Route, deren eigene Regeln es erfüllt.
+- **`devices`:** Dann gehen nur `<base>/<gerät>` und `<base>/<gerät>/…` hinaus (Werte,
+  `availability`, …) sowie ein **auf diese Geräte gekürztes** `<base>/bridge/devices`.
+  Sonst würde das Ziel alle Geräte des Standorts anlegen. Alle anderen `bridge/*`-Meldungen
+  (`bridge/info` enthält die z2m-Konfiguration) gehen über eine Route mit Geräteliste **nie**
+  hinaus. Die Werte kommen unter dem `friendly_name` aus z2m. Ein Eintrag per **IEEE-Adresse**
+  folgt dem Gerät auch nach einem Umbenennen: Die Route liest aus dem jüngsten
+  `bridge/devices`, welchen Namen das Gerät gerade trägt. Bis nach einem Neustart des Proxys
+  die erste Liste eintrifft, greift die IEEE-Adresse nur, solange friendly_name und IEEE
+  gleich sind (z2m-Standard). Ein Eintrag per Anzeigename gilt nur für genau diesen Namen —
+  **IEEE ist deshalb der bessere Eintrag.**
+- **Nicht über Routen:** Downstream (Cloud → lokale Geräte) und die Fernsteuerung laufen nur
+  über den Haupt-Upstream. `pause`/`drain` aus der Fernsteuerung gelten für alle Worker.
 
 ## Architektur-Diagramm nach Betriebsart
 
@@ -101,6 +149,7 @@ Die Einstellung `mode` entscheidet darüber, über welchen Weg der Worker die Da
 graph TD
     subgraph Lokales Gateway
         Z[Zigbee2MQTT] -- "Publish (QoS 1)" --> M(Lokaler Broker\nPort 1884)
+        A[Aktor / Client] <--> M
         M -- "Store Hook" --> DB[(BadgerDB\n./data)]
         DB -- "FIFO Polling" --> W((Forward Worker))
         W --> C{Config: mode}
@@ -108,6 +157,7 @@ graph TD
 
     subgraph Cloud / Upstream
         C -- "mode: mqtt" --> F_MQTT[Paho MQTT Client]
+        F_MQTT -. "Downstream" .-> M
         F_MQTT -- "tcp://cloud-broker...:1883" --> CB[Cloud MQTT Broker]
         
         C -- "mode: http" --> F_HTTP[net/http Client]

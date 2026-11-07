@@ -31,7 +31,16 @@ type Worker struct {
 	// Fehlerverfolgung für Exponential Backoff
 	consecutiveFailures int
 	nextAttempt         time.Time
+
+	// pauseCheck (optional) lässt das Upstream-Senden ruhen, solange es true liefert
+	// (Fernsteuerung „pause"/„drain"). Eingehende Nachrichten werden weiter im
+	// Store&Forward-Puffer gehalten — kein Datenverlust; „resume" leert den Puffer.
+	pauseCheck func() bool
 }
+
+// SetPauseCheck hinterlegt eine Funktion, die das Pausieren des Upstream-Versands
+// steuert (true = ruhen). nil = nie pausieren (Standardverhalten).
+func (w *Worker) SetPauseCheck(fn func() bool) { w.pauseCheck = fn }
 
 // New erzeugt eine neue Worker-Instanz, die auf der DB, dem Forwarder und der Konfiguration operiert.
 func New(s *storage.Store, f forwarder.Forwarder, cfg config.WorkerConf) *Worker {
@@ -71,6 +80,10 @@ func (w *Worker) Stop() {
 // runBatch verarbeitet einen Batch von gepufferten Nachrichten in einer Schleife
 // bis zu MaxBatchSize, um die DB effizient und schnell abzuarbeiten.
 func (w *Worker) runBatch() {
+	// Fernsteuerung „pause"/„drain": Versand ruhen lassen (Puffer bleibt erhalten).
+	if w.pauseCheck != nil && w.pauseCheck() {
+		return
+	}
 	for i := 0; i < w.cfg.MaxBatchSize; i++ {
 		// Stop-Signal prüfen
 		select {
@@ -104,7 +117,7 @@ func (w *Worker) runBatch() {
 // 1. Prüft, ob ein Backoff aktiv ist.
 // 2. Verbindung zum Upstream sicherstellen.
 // 3. Ältesten Puffer-Eintrag aus BadgerDB lesen.
-// 4. Zeitstempel aus dem Datenbankschlüssel (RFC3339Nano) dekodieren.
+// 4. Zeitstempel aus dem Eintrag lesen (alte Einträge: aus dem Schlüssel, RFC3339Nano).
 // 5. Nachricht über Forwarder senden.
 // 6. Bei erfolgreichem Versand: Eintrag aus der BadgerDB löschen.
 // Gibt zurück, ob eine Nachricht erfolgreich verarbeitet wurde (processed) und ggf. einen Fehler.
@@ -141,11 +154,12 @@ func (w *Worker) processNext() (bool, error) {
 		return true, nil // true zurückgeben, da dieser Tabelleneintrag erledigt (gelöscht) ist
 	}
 
-	// Zeitstempel aus dem Key rekonstruieren
-	var ts time.Time
-	ts, err = time.Parse(time.RFC3339Nano, string(key))
+	// Messzeit: aus dem Eintrag (seit 07.11.2026); Einträge im alten Format tragen sie im Schlüssel.
+	ts, err := time.Parse(time.RFC3339Nano, wrapper.Time)
 	if err != nil {
-		ts = time.Now()
+		if ts, err = time.Parse(time.RFC3339Nano, string(key)); err != nil {
+			ts = time.Now()
+		}
 	}
 
 	// 5. Nachricht an Upstream senden

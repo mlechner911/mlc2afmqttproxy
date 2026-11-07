@@ -95,9 +95,9 @@ graph LR
 
 ### 💻 Phase 3: Entwicklung & Start Go-Proxy
 - [x] **Basis-Setup**: Go Module, Konfiguration, Mochi Broker, BadgerDB, Gin Webserver initialisiert.
-- [ ] **Proxy-Features**: Forwarder Interface (Unterstützung für MQTT & HTTP Ingest), BadgerDB Puffer, Retention-Policy (FIFO), Health-API (`/health`).
-- [ ] **Diagnostik-UI**: Integriertes Bootstrap 5 Dashboard zur Anzeige von Systemzustand und gepufferten Daten.
-- [ ] **Deployment**: Systemd-Unit mit Abhängigkeiten (`After=network.target`).
+- [x] **Proxy-Features**: Forwarder Interface (Unterstützung für MQTT & HTTP Ingest), BadgerDB Puffer, Retention-Policy (FIFO), Health-API (`/health`).
+- [x] **Diagnostik-UI**: Integriertes Svelte Dashboard zur Anzeige von Systemzustand und gepufferten Daten.
+- [x] **Deployment**: Systemd-Unit mit Abhängigkeiten (`After=network.target`).
 
 ### 🧪 Phase 5: Härtungstests
 - [ ] **Test 1**: Netzstecker ziehen -> 0ms USV-Umschaltung prüfen.

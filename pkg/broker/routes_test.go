@@ -1,0 +1,160 @@
+package broker
+
+import (
+	"encoding/json"
+	"path/filepath"
+	"testing"
+
+	"github.com/mochi-mqtt/server/v2/packets"
+
+	"mlc2afmqttproxy/pkg/config"
+	"mlc2afmqttproxy/pkg/storage"
+)
+
+const bridgeDevices = `[
+ {"ieee_address":"0x0000000000000001","friendly_name":"0x0000000000000001","type":"Coordinator"},
+ {"ieee_address":"0x00158d0000000a01","friendly_name":"0x00158d0000000a01","definition":{"model":"SZ-T04"}},
+ {"ieee_address":"0x00158d0000000b02","friendly_name":"MovementSensor 0x00158d0000000b02","definition":{"model":"ZG-204ZL"}},
+ {"ieee_address":"0x00158d0000000c03","friendly_name":"0x00158d0000000c03","definition":{"model":"TS011F_plug_3"}}
+]`
+
+func demoRoute(store *storage.Store) Route {
+	return NewRoute(config.RouteConf{Name: "demo", BaseTopic: "zigbee2mqtt",
+		Devices: []string{"0x00158d0000000a01", "0x00158d0000000b02"}}, store) // IEEE statt Anzeigename
+}
+
+// TestRouteAccept: Mit Geräteliste gehen nur deren Topics und ein gekürztes bridge/devices
+// hinaus — keine anderen Geräte, keine übrigen Bridge-Meldungen (bridge/info trägt die
+// z2m-Konfiguration).
+func TestRouteAccept(t *testing.T) {
+	r := demoRoute(nil)
+	cases := []struct {
+		topic string
+		want  bool
+	}{
+		{"zigbee2mqtt/0x00158d0000000a01", true},
+		{"zigbee2mqtt/0x00158d0000000a01/availability", true},
+		{"zigbee2mqtt/0x00158d0000000c03", false}, // nicht in der Liste
+		{"zigbee2mqtt/bridge/info", false},        // Standort-Konfiguration
+		{"zigbee2mqtt/bridge/state", false},
+		{"zigbee2mqtt/bridge/devices", true},       // gekürzt
+		{"homeassistant/sensor/x/config", false},   // anderes Präfix
+		{"zigbee2mqtt/0x00158d0000000a01X", false}, // kein Präfix-Treffer auf halbe Namen
+	}
+	for _, c := range cases {
+		if _, got := r.Accept(c.topic, []byte(`{}`)); got != c.want && c.topic != "zigbee2mqtt/bridge/devices" {
+			t.Errorf("%s: got %v, want %v", c.topic, got, c.want)
+		}
+	}
+	// Vor der ersten Geräteliste kennt die Route nur ihre Einträge: Das Topic über den
+	// Anzeigenamen passiert (noch) nicht.
+	if _, ok := r.Accept("zigbee2mqtt/MovementSensor 0x00158d0000000b02", []byte(`{}`)); ok {
+		t.Error("Anzeigename darf vor der ersten Geräteliste nicht passieren")
+	}
+}
+
+// TestRouteFollowsRename: Ein per IEEE eingetragenes Gerät bleibt in der Route, auch wenn es
+// in zigbee2mqtt umbenannt wird — die Route lernt den Namen aus bridge/devices
+// (B-20261012-03). Ein fremdes Gerät gewinnt dabei nichts, auch nicht unter altem Namen.
+func TestRouteFollowsRename(t *testing.T) {
+	r := demoRoute(nil)
+	if _, ok := r.Accept("zigbee2mqtt/bridge/devices", []byte(bridgeDevices)); !ok {
+		t.Fatal("bridge/devices abgelehnt")
+	}
+	if _, ok := r.Accept("zigbee2mqtt/MovementSensor 0x00158d0000000b02", []byte(`{}`)); !ok {
+		t.Error("Anzeigename eines Geräts der Route muss nach der Geräteliste passieren")
+	}
+
+	renamed := `[
+ {"ieee_address":"0x00158d0000000a01","friendly_name":"Kuehlschrank 2","definition":{"model":"SZ-T04"}},
+ {"ieee_address":"0x00158d0000000c03","friendly_name":"MovementSensor 0x00158d0000000b02","definition":{"model":"TS011F_plug_3"}}
+]`
+	if _, ok := r.Accept("zigbee2mqtt/bridge/devices", []byte(renamed)); !ok {
+		t.Fatal("bridge/devices abgelehnt")
+	}
+	cases := []struct {
+		topic string
+		want  bool
+	}{
+		{"zigbee2mqtt/Kuehlschrank 2", true},              // umbenannt, per IEEE eingetragen
+		{"zigbee2mqtt/Kuehlschrank 2/availability", true}, // samt Unter-Topics
+		// Der alte Name gehört jetzt einem fremden Gerät — er fällt mit der neuen Liste weg.
+		{"zigbee2mqtt/MovementSensor 0x00158d0000000b02", false},
+		{"zigbee2mqtt/0x00158d0000000c03", false},
+		{"zigbee2mqtt/0x00158d0000000a01", true}, // der Eintrag selbst gilt weiter
+	}
+	for _, c := range cases {
+		if _, got := r.Accept(c.topic, []byte(`{}`)); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.topic, got, c.want)
+		}
+	}
+}
+
+// TestFilterBridgeDevices: Nur die Geräte der Route bleiben, Einträge unverändert; Treffer
+// über IEEE ODER Anzeigenamen.
+func TestFilterBridgeDevices(t *testing.T) {
+	r := demoRoute(nil)
+	out, ok := r.Accept("zigbee2mqtt/bridge/devices", []byte(bridgeDevices))
+	if !ok {
+		t.Fatal("bridge/devices abgelehnt")
+	}
+	var got []map[string]any
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d Geräte, want 2: %s", len(got), out)
+	}
+	for _, d := range got {
+		if d["ieee_address"] == "0x00158d0000000c03" || d["type"] == "Coordinator" {
+			t.Errorf("Gerät außerhalb der Liste weitergegeben: %v", d)
+		}
+	}
+	if _, ok := r.Accept("zigbee2mqtt/bridge/devices", []byte(`kein json`)); ok {
+		t.Error("ungültige Liste muss verworfen werden, nicht ungefiltert weitergehen")
+	}
+}
+
+// TestHookWritesToRoute: Eine Nachricht landet im Haupt-Puffer UND im Puffer der passenden
+// Route; eine nicht passende nur im Haupt-Puffer.
+func TestHookWritesToRoute(t *testing.T) {
+	dir := t.TempDir()
+	main, err := storage.InitBadger(filepath.Join(dir, "main"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer main.Close()
+	rs, err := storage.InitBadger(filepath.Join(dir, "routes", "demo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rs.Close()
+	h := &StoreHook{store: main, lastSeen: map[string]lastMsg{}, routes: []Route{demoRoute(rs)}}
+
+	pub := func(topic, payload string) {
+		var pk packets.Packet
+		pk.TopicName = topic
+		pk.Payload = []byte(payload)
+		if _, err := h.OnPublish(nil, pk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pub("zigbee2mqtt/0x00158d0000000a01", `{"temperature":21.3,"last_seen":1791000000000}`)
+	pub("zigbee2mqtt/0x00158d0000000c03", `{"power":0}`)
+
+	if n, _ := main.GetSize(); n != 2 {
+		t.Errorf("Haupt-Puffer: %d Einträge, want 2", n)
+	}
+	if n, _ := rs.GetSize(); n != 1 {
+		t.Fatalf("Routen-Puffer: %d Einträge, want 1", n)
+	}
+	_, val, err := rs.PeekFirst()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var w PayloadWrapper
+	_ = json.Unmarshal(val, &w)
+	if w.Topic != "zigbee2mqtt/0x00158d0000000a01" {
+		t.Errorf("Routen-Puffer enthält %q", w.Topic)
+	}
+}

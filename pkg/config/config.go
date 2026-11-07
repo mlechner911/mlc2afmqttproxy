@@ -13,17 +13,80 @@ import (
 // des MLC2AF MQTT Proxys.
 type Config struct {
 	// Mode steuert den Upstream-Übertragungsmodus. Erlaubte Werte sind "mqtt" oder "http".
-	Mode    string      `yaml:"mode"`
+	Mode    string       `yaml:"mode"`
 	// Storage enthält Konfigurationsoptionen für die BadgerDB-Speicherung.
-	Storage StorageConf `yaml:"storage"`
-	// MQTT enthält Konfigurationsoptionen für den lokalen und den Upstream-MQTT-Broker.
-	MQTT    MQTTConf    `yaml:"mqtt"`
+	Storage StorageConf  `yaml:"storage"`
+	// MQTTConf enthält Konfigurationen für den lokalen und den Upstream-MQTT-Broker.
+	MQTT    MQTTConf     `yaml:"mqtt"`
 	// HTTP enthält Zugangsdaten und Endpunkte für den HTTP-Upstream.
-	HTTP    HTTPConf    `yaml:"http"`
+	HTTP    HTTPConf     `yaml:"http"`
 	// Server steuert die Port-Einstellung des Diagnose-Webservers.
-	Server  ServerConf  `yaml:"server"`
+	Server  ServerConf   `yaml:"server"`
 	// Worker konfiguriert das Verhalten des Store & Forward Hintergrund-Workers.
-	Worker  WorkerConf  `yaml:"worker"`
+	Worker  WorkerConf   `yaml:"worker"`
+	// Monitor steuert die OPTIONALE Selbst-Überwachung/-Steuerung über den MLC
+	// Sensor Monitor (Heartbeat + Fernsteuerung). Per Default AKTIV.
+	Monitor MonitorConf  `yaml:"monitor"`
+	// Routes sind ZUSÄTZLICHE Upstreams neben dem Haupt-Upstream (mode/mqtt/http oben):
+	// jede mit eigenem Ziel und Zugang (z. B. Ingest-Token eines anderen Mandanten), eigenem
+	// Filter, optional eigener Geräteliste — und eigenem Puffer + Worker, damit ein
+	// unerreichbares Ziel die anderen nicht aufhält. Leer = Verhalten wie bisher.
+	Routes []RouteConf `yaml:"routes,omitempty"`
+}
+
+// RouteConf beschreibt einen zusätzlichen Upstream (siehe Config.Routes).
+type RouteConf struct {
+	// Name identifiziert die Route (Puffer-Verzeichnis <storage.path>/routes/<name>, Logs).
+	Name string `yaml:"name"`
+	// Mode "mqtt" (Default) oder "http".
+	Mode string `yaml:"mode"`
+	// MQTT-Ziel und Zugang (Mode mqtt). Zeitstempel-Modus wie beim Haupt-Upstream.
+	Upstream   string `yaml:"upstream"`
+	Username   string `yaml:"username"`
+	Password   string `yaml:"password"`
+	TopicAlias bool   `yaml:"topic_alias"`
+	// HTTP-Ziel (Mode http).
+	HTTP HTTPConf `yaml:"http"`
+	// Filter wirkt ZUSÄTZLICH zum globalen Filter (mqtt.filter).
+	Filter *FilterConf `yaml:"filter,omitempty"`
+	// Devices: nur diese Zigbee-Geräte (friendly_name oder IEEE-Adresse). Dann gehen nur
+	// <base>/<gerät>[/…] und ein auf diese Geräte GEKÜRZTES <base>/bridge/devices hinaus —
+	// sonst würde das Ziel alle Geräte des Standorts anlegen. Leer = alle (nach Filter).
+	Devices []string `yaml:"devices,omitempty"`
+	// BaseTopic von Zigbee2MQTT (Default "zigbee2mqtt").
+	BaseTopic string `yaml:"base_topic"`
+}
+
+// MonitorConf konfiguriert die optionale Anbindung an den MLC Sensor Monitor:
+// ein periodischer Heartbeat (der Proxy erscheint dort als Dienst-Kachel und ein
+// Ausfall löst automatisch ein Ereignis aus) sowie eine MQTT-Fernsteuerung
+// (pause/resume/drain/restart/stop). Beides ist additiv und **standardmäßig an** —
+// der Proxy läuft aber auch ohne (z. B. wenn kein Monitor erreichbar ist). Es werden
+// KEINE internen Pakete des Monitors importiert (lose Kopplung).
+type MonitorConf struct {
+	// Enabled schaltet Heartbeat + Fernsteuerung. nil/unges. = true (Default an).
+	Enabled *bool `yaml:"enabled"`
+	// Control schaltet NUR die Fernsteuerung (cmd/svc/<device>). nil/unges. = true.
+	Control *bool `yaml:"control"`
+	// Device ist der Gerätename im Monitor (Default "svc-edgeproxy", muss mit svc- beginnen).
+	Device string `yaml:"device"`
+	// IntervalS ist das Heartbeat-Intervall in Sekunden (Default 30).
+	IntervalS int `yaml:"interval_s"`
+	// IngestURL ist der HTTP-Ingest-Endpunkt für den Heartbeat. Leer = HTTP.Endpoint.
+	IngestURL string `yaml:"ingest_url"`
+	// Token ist das X-Ingest-Token für den Heartbeat. Leer = HTTP.Token bzw. MQTT.Password.
+	Token string `yaml:"token"`
+}
+
+// MonitorEnabled meldet, ob die Monitor-Anbindung (Heartbeat) aktiv ist (Default an).
+func (c *Config) MonitorEnabled() bool {
+	return c.Monitor.Enabled == nil || *c.Monitor.Enabled
+}
+
+// MonitorControlEnabled meldet, ob die Fernsteuerung aktiv ist (Default an, setzt
+// MonitorEnabled voraus).
+func (c *Config) MonitorControlEnabled() bool {
+	return c.MonitorEnabled() && (c.Monitor.Control == nil || *c.Monitor.Control)
 }
 
 // StorageConf enthält Einstellungen für die persistente lokale Datenbank.
@@ -37,31 +100,45 @@ type StorageConf struct {
 // MQTTConf enthält Konfigurationen für die MQTT-Listener sowie die MQTT-Upstream-Verbindung.
 type MQTTConf struct {
 	// LocalPort ist der lokale Port für den TCP Mochi-MQTT Listener (z.B. 1883).
-	LocalPort     int    `yaml:"local_port"`
+	LocalPort     int              `yaml:"local_port"`
 	// WsPort ist der Port des WebSocket-Listeners für das Live-Dashboard (z.B. 1885).
-	WsPort        int    `yaml:"ws_port"`
+	WsPort          int              `yaml:"ws_port"`
 	// Upstream ist die Adresse des Cloud- oder Master-Brokers (z.B. tcp://cloud.example.com:1883).
-	Upstream      string `yaml:"upstream"`
+	Upstream        string           `yaml:"upstream"`
 	// Username ist der optionale Benutzername für den Upstream-Broker.
-	Username      string `yaml:"username"`
+	Username        string           `yaml:"username"`
 	// Password ist das optionale Passwort für den Upstream-Broker.
-	Password      string `yaml:"password"`
+	Password        string           `yaml:"password"`
 	// TopicAlias aktiviert die Nutzung von MQTT 5 Topic Aliases zur Bandbreiteneinsparung.
-	TopicAlias    bool   `yaml:"topic_alias"`
+	TopicAlias      bool             `yaml:"topic_alias"`
 	// TimestampMode steuert, wie Zeitstempel übertragen werden ("none", "json_inject", "v5_property").
-	TimestampMode  string            `yaml:"timestamp_mode"`
+	TimestampMode   string           `yaml:"timestamp_mode"`
 	// TimestampField definiert den JSON-Key beim Modus "json_inject" (Standard: "_ts").
-	TimestampField string            `yaml:"timestamp_field"`
+	TimestampField  string           `yaml:"timestamp_field"`
 	// TopicRewrite erlaubt das Umschreiben von Topics vor dem Senden an den Upstream-Broker.
-	TopicRewrite   *TopicRewriteConf `yaml:"topic_rewrite,omitempty"`
+	TopicRewrite    *TopicRewriteConf `yaml:"topic_rewrite,omitempty"`
 	// Filter limitiert, welche Topics lokal gespeichert und an den Upstream gesendet werden.
-	Filter         *FilterConf       `yaml:"filter,omitempty"`
+	Filter          *FilterConf       `yaml:"filter,omitempty"`
 	// DeduplicateIntervalMs verwirft Nachrichten mit identischem Topic und Payload,
 	// wenn sie innerhalb dieses Zeitfensters eintreffen (Standard: 0 = deaktiviert).
-	DeduplicateIntervalMs int        `yaml:"deduplicate_interval_ms"`
+	DeduplicateIntervalMs int         `yaml:"deduplicate_interval_ms"`
 	// DeduplicateIgnoreKeys definiert JSON-Keys, die beim intelligenten
 	// Deduplizierungs-Vergleich ignoriert werden sollen (z.B. last_seen).
-	DeduplicateIgnoreKeys []string   `yaml:"deduplicate_ignore_keys,omitempty"`
+	DeduplicateIgnoreKeys []string           `yaml:"deduplicate_ignore_keys,omitempty"`
+	// Downstream ermöglicht den Empfang von Nachrichten vom Upstream-Broker
+	// und das Forwarden derselben an lokale MQTT-Clients (z.B. Aktor-Steuerung).
+	Downstream          *DownstreamConf      `yaml:"downstream_config,omitempty"`
+}
+
+// DownstreamConf steuert das bidirektionale Routing vom Upstream-Broker
+// zurück zu lokalen MQTT-Clients am Mochi-Broker.
+type DownstreamConf struct {
+	// SubscribeTopics definiert die Topics, die beim Upstream-Broker abonniert werden sollen.
+	// Wildcards sind erlaubt (z.B. "cloud/commands/+").
+	SubscribeTopics []string          `yaml:"subscribe_topics,omitempty"`
+	// Rewrite erlaubt das Zurückschreiben des Topics vor dem lokalen Publish.
+	// (z.B. match_prefix: "cloud/commands/zigbee2mqtt/" → replace_with: "zigbee2mqtt/")
+	Rewrite       *TopicRewriteConf `yaml:"rewrite,omitempty"`
 }
 
 // FilterConf ermöglicht das Filtern von Topics anhand von Präfixen.
@@ -130,10 +207,18 @@ func LoadConfig(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
-	
+
 	// Default-Werte anwenden, falls nicht gesetzt:
 	if cfg.Mode == "" {
 		cfg.Mode = "mqtt"
+	}
+	for i := range cfg.Routes {
+		if cfg.Routes[i].Mode == "" {
+			cfg.Routes[i].Mode = "mqtt"
+		}
+		if cfg.Routes[i].BaseTopic == "" {
+			cfg.Routes[i].BaseTopic = "zigbee2mqtt"
+		}
 	}
 	if cfg.Storage.Path == "" {
 		cfg.Storage.Path = "./data"
@@ -179,7 +264,26 @@ func LoadConfig(path string) (*Config, error) {
 	if cfg.Worker.RetryMaxS == 0 {
 		cfg.Worker.RetryMaxS = 60
 	}
-	
+
+	// Monitor-Anbindung: Defaults. Gerät svc-edgeproxy, 30 s Heartbeat; Heartbeat-Ziel
+	// und Token aus dem HTTP-Block bzw. (Fallback) aus den MQTT-Upstream-Zugangsdaten —
+	// so funktioniert die Anbindung ohne Extra-Konfiguration „out of the box".
+	if cfg.Monitor.Device == "" {
+		cfg.Monitor.Device = "svc-edgeproxy"
+	}
+	if cfg.Monitor.IntervalS == 0 {
+		cfg.Monitor.IntervalS = 30
+	}
+	if cfg.Monitor.IngestURL == "" {
+		cfg.Monitor.IngestURL = cfg.HTTP.Endpoint
+	}
+	if cfg.Monitor.Token == "" {
+		if cfg.HTTP.Token != "" {
+			cfg.Monitor.Token = cfg.HTTP.Token
+		} else {
+			cfg.Monitor.Token = cfg.MQTT.Password // Upstream-Passwort = Ingest-Token
+		}
+	}
+
 	return &cfg, nil
 }
-

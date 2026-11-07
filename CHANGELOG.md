@@ -2,6 +2,19 @@
 
 Alle signifikanten Änderungen an diesem Projekt werden in dieser Datei dokumentiert.
 
+## [Unreleased]
+
+### Behoben
+- **Puffer: Einträge blieben liegen, Reihenfolge falsch, gleiche Zeitstempel überschrieben einander.** Der Schlüssel war die Empfangszeit als RFC3339Nano — das Format lässt Nullen am Ende weg („…00.1Z", „…00.12Z") und sortiert als Text nicht nach der Zeit. Folgen: Ein später angekommener Eintrag lag hinter der Lese-Marke und wurde erst nach einem Neustart weitergeleitet; Einträge derselben Sekunde gingen in falscher Reihenfolge hinaus; zwei Nachrichten mit gleichem Zeitstempel (grobe Uhr, mehrere Geräte zugleich) — eine ging verloren; stellte NTP die Uhr zurück, blieb alles Neue liegen. Jetzt ist der Schlüssel eine laufende Nummer (zählt nach Neustart weiter), die Empfangszeit steht im Eintrag (`time`). Einträge im alten Format werden beim Update zuerst und mit der Zeit aus dem Schlüssel weitergeleitet. Tests: `pkg/storage/badger_test.go`, `pkg/worker/worker_test.go` (bisher ohne Tests).
+
+### Sicherheit
+- **Bekannte Schwachstellen behoben:** Go-Werkzeugkette `go1.26.10` (Standardbibliothek: `net/http`, `crypto/tls`, `crypto/x509`, `html/template`, `net/textproto`), `golang.org/x/net` v0.60.0, `quic-go` v0.59.1, `klauspost/compress` v1.20.2 — 15 erreichbare Schwachstellen laut govulncheck, erreichbar über Dashboard und HTTP-Weiterleitung. Geprüft wird der Proxy seit 07.11.2026 mit `task edge:check` aus dem MLC Sensor Monitor.
+- **Kein echtes Token im Beispiel:** `config.example.yaml` trug ein früheres, inzwischen widerrufenes Ingest-Token als Kommentar; jetzt ein Platzhalter.
+
+### Hinzugefügt
+- **Routen (mehrere Upstreams):** Neuer Konfig-Abschnitt `routes:`. Jede Route ist ein zusätzlicher Upstream mit eigenem Zugang (z. B. Ingest-Token eines anderen Mandanten), eigenem Filter und **eigenem Puffer + Worker** (`<storage.path>/routes/<name>`), damit ein unerreichbares Ziel die anderen nicht aufhält. Optional `devices`: Dann gehen nur diese Zigbee-Geräte hinaus und ein auf sie **gekürztes `bridge/devices`**; andere `bridge/*`-Meldungen gehen über eine Route mit Geräteliste nie hinaus. Ohne `routes:` verhält sich der Proxy wie bisher. Tests: `pkg/broker/routes_test.go`.
+- **Self-Monitoring & Fernsteuerung (optional, standardmäßig an):** Der Proxy meldet sich beim MLC Sensor Monitor als Dienst `svc-edgeproxy` per **Heartbeat** (HTTP-Ingest: `service_up`/`service_state`/`svc_uptime_s`) — fällt er aus, erzeugt der Monitor automatisch ein Ereignis (der Zigbee-Edge-Pfad ist damit lückenlos überwacht). Zusätzlich **Fernsteuerung** über `cmd/svc/<name>` auf dem ohnehin genutzten Upstream-Broker: `pause`/`drain` (Upstream-Versand ruht, Daten bleiben gepuffert — kein Verlust), `resume` (Puffer leeren), `restart`/`stop` (geordnetes Beenden). Bewusst **lose gekoppelt** (kein Import von Monitor-Paketen, reines HTTP+MQTT) und über `monitor.enabled: false` vollständig abschaltbar — der Proxy läuft auch ohne Monitor normal weiter. Neues Paket `pkg/svcmon`, Konfig-Abschnitt `monitor:`, Worker-Pause-Gate (`SetPauseCheck`).
+
 ## [1.0.2] - 2026-06-07
 
 ### Hinzugefügt

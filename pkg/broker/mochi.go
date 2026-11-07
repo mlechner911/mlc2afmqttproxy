@@ -30,6 +30,9 @@ type PayloadWrapper struct {
 	Topic   string `json:"topic"`
 	// Die rohen Payload-Bytes der Nachricht
 	Payload []byte `json:"payload"`
+	// Time ist der Empfangszeitpunkt (UTC, RFC3339Nano) — die Messzeit, mit der die Nachricht
+	// weitergeleitet wird. Seit 07.11.2026 im Eintrag statt im Schlüssel (storage.Append).
+	Time string `json:"time,omitempty"`
 }
 
 // lastMsg speichert den Zeitpunkt und den Payload der zuletzt gesehenen Nachricht für ein Topic
@@ -50,6 +53,8 @@ type StoreHook struct {
 	dedupInterval int
 	// dedupIgnoreKeys definiert JSON-Keys, die beim intelligenten Vergleich ignoriert werden
 	dedupIgnoreKeys []string
+	// routes sind zusätzliche Upstreams mit eigenem Puffer (config.Routes)
+	routes []Route
 	
 	mu       sync.Mutex
 	lastSeen map[string]lastMsg
@@ -134,12 +139,14 @@ func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packe
 		h.mu.Unlock()
 	}
 
-	// Erstelle Schlüssel basierend auf UTC-Zeitstempel in RFC3339Nano (für korrekte lexikographische FIFO-Sortierung in Badger)
-	key := []byte(time.Now().UTC().Format(time.RFC3339Nano))
+	// Empfangszeit in den Eintrag; der Schlüssel ist eine laufende Nummer (storage.Append) — eindeutig
+	// und in Ankunftsreihenfolge, auch wenn die Uhr springt.
+	empfangen := time.Now().UTC().Format(time.RFC3339Nano)
 
 	wrapper := PayloadWrapper{
 		Topic:   pk.TopicName,
 		Payload: pk.Payload,
+		Time:    empfangen,
 	}
 
 	val, err := json.Marshal(wrapper)
@@ -149,10 +156,25 @@ func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packe
 	}
 
 	// Speichern in BadgerDB
-	if err := h.store.Push(key, val); err != nil {
+	if _, err := h.store.Append(val); err != nil {
 		log.Printf("Fehler beim Speichern der MQTT-Nachricht in BadgerDB: %v", err)
 	} else {
 		metrics.IncStored()
+	}
+
+	// Zusätzliche Routen: eigener Puffer je Route, eigene Regeln (Filter, Geräteliste).
+	for _, rt := range h.routes {
+		p, ok := rt.Accept(pk.TopicName, pk.Payload)
+		if !ok {
+			continue
+		}
+		rv, err := json.Marshal(PayloadWrapper{Topic: pk.TopicName, Payload: p, Time: empfangen})
+		if err != nil {
+			continue
+		}
+		if _, err := rt.Store.Append(rv); err != nil {
+			log.Printf("[Route %s] Fehler beim Speichern: %v", rt.Name, err)
+		}
 	}
 
 	return pk, nil
@@ -194,7 +216,7 @@ func isPayloadEffectivelyEqual(a, b []byte, ignoreKeys []string) bool {
 // 1. TCP Listener: Auf diesem Port (standardmäßig 1883) lauschen wir auf lokale Geräte wie Zigbee2MQTT.
 // 2. WebSocket Listener: Auf diesem Port (standardmäßig 1885) verbinden sich Web-Clients wie das Svelte Dashboard.
 // Der Registrierte StoreHook stellt sicher, dass alle Publish-Nachrichten persistent gespeichert werden.
-func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config.FilterConf, dedupInterval int, dedupIgnoreKeys []string, maxDbSizeMB int) (*mqtt.Server, error) {
+func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config.FilterConf, dedupInterval int, dedupIgnoreKeys []string, maxDbSizeMB int, routes ...Route) (*mqtt.Server, error) {
 	server := mqtt.New(nil)
 
 	// Anonyme Verbindungen erlauben (wichtig für lokale, einfache IoT-Geräte)
@@ -206,6 +228,7 @@ func StartLocalBroker(port int, wsPort int, store *storage.Store, filter *config
 		dedupInterval:   dedupInterval,
 		dedupIgnoreKeys: dedupIgnoreKeys,
 		lastSeen:        make(map[string]lastMsg),
+		routes:          routes,
 	}
 	
 	// Hook für die BadgerDB-Pufferung registrieren

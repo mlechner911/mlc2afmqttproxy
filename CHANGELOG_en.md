@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - Buffer: entries could stay stuck until restart, leave out of order, or overwrite each other on equal timestamps; keys are now a persistent sequence number with the receive time stored in the entry.
 
 ### Security
+- **Packages contained the real configuration.** `build/package/nfpm.yaml` packed the local `config.yaml` (upstream password, ingest token) world-readable (0644); the packages built that way had been in `build/dist/` of this public repository since 1.0.2. The credentials in them are no longer valid (checked 2026-11-07). Now always `config.example.yaml` is packed, as a config file an update does not overwrite, mode 0640, group `mlc-edge-proxy`; built packages are no longer kept in the repository; `nfpm` pinned to v2.47.0; package licence GPL-3.0-only instead of MIT.
 - Fixed 15 reachable known vulnerabilities: Go toolchain go1.26.10, golang.org/x/net v0.60.0, quic-go v0.59.1, klauspost/compress v1.20.2.
 - Removed a former, since revoked ingest token from the commented example in config.example.yaml.
 

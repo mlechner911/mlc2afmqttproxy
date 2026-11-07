@@ -10,6 +10,10 @@ fi
 mkdir -p /var/lib/mlc-edge-proxy
 chown mlc-edge-proxy:mlc-edge-proxy /var/lib/mlc-edge-proxy
 
+# Konfiguration mit Zugangsdaten: nur root (schreiben) und der Dienst (lesen)
+chgrp mlc-edge-proxy /etc/mlc-edge-proxy/config.yaml
+chmod 0640 /etc/mlc-edge-proxy/config.yaml
+
 # Reload systemd and start the service (if systemd is running)
 if [ -d /run/systemd/system ]; then
     systemctl daemon-reload || true

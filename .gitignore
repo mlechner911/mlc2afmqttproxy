@@ -13,3 +13,7 @@ config.yaml
 
 # private Klone (dochub-cli mlcai attach) — nicht Teil dieses Repos
 /.mlcai/
+
+# Gebaute Pakete gehören nicht ins Repository (Release-Artefakte). Bis 07.11.2026 lagen hier
+# .deb/.rpm mit der echten config.yaml darin (Sicherheitsprüfung P3-05).
+/build/dist/

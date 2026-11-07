@@ -6,7 +6,7 @@ maintainer: "MLC Team"
 description: "MLC Edge Proxy - Store & Forward MQTT Buffer for Edge Ingestion"
 vendor: "MLC"
 homepage: "https://github.com/mlechner911/mlc2afmqttproxy"
-license: "MIT"
+license: "GPL-3.0-only"
 
 contents:
   # The binary
@@ -15,12 +15,16 @@ contents:
     file_info:
       mode: 0755
   
-  # The configuration file
-  - src: "../../config.yaml"
+  # Die Konfiguration: IMMER die Vorlage, nie die lokale config.yaml — die trägt echte
+  # Zugangsdaten. Bis 07.11.2026 stand hier ../../config.yaml (0644); so lagen Upstream-
+  # Passwort und Ingest-Token in den Paketen unter build/dist/ im öffentlichen Repository
+  # (Sicherheitsprüfung P3-05). noreplace: ein Update überschreibt die eingerichtete Datei nicht.
+  # 0640 + Gruppe mlc-edge-proxy (postinstall): nur root und der Dienst lesen die Zugangsdaten.
+  - src: "../../config.example.yaml"
     dst: "/etc/mlc-edge-proxy/config.yaml"
-    type: "config"
+    type: "config|noreplace"
     file_info:
-      mode: 0644
+      mode: 0640
   
   # The systemd service unit
   - src: "../../deployment/proxy.service"

@@ -84,5 +84,5 @@ tasks:
     deps: [build]
     cmds:
       - mkdir -p build/dist
-      - cd build/package && go run github.com/goreleaser/nfpm/v2/cmd/nfpm@latest pkg --packager rpm --target ../dist/
-      - cd build/package && go run github.com/goreleaser/nfpm/v2/cmd/nfpm@latest pkg --packager deb --target ../dist/
+      - cd build/package && go run github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0 pkg --packager rpm --target ../dist/
+      - cd build/package && go run github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0 pkg --packager deb --target ../dist/

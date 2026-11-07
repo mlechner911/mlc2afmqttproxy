@@ -1,7 +1,7 @@
 name: "mlc-edge-proxy"
 arch: "amd64" # This will be overridden by the CLI
 platform: "linux"
-version: "1.0.2" # This will be overridden by the CLI
+version: "${VERSION}" # aus der VERSION-Datei (task package setzt die Umgebung)
 maintainer: "MLC Team"
 description: "MLC Edge Proxy - Store & Forward MQTT Buffer for Edge Ingestion"
 vendor: "MLC"

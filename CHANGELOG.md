@@ -1,42 +1,59 @@
 # Changelog
 
-Alle signifikanten Änderungen an diesem Projekt werden in dieser Datei dokumentiert.
+One line per change. Background, measurements and ticket references: release notes in the project's Doc Hub (`releases/<version>.md`).
 
-## [Unreleased]
+## [1.1.0] - 2026-11-07
 
-### Behoben
-- **Puffer: Einträge blieben liegen, Reihenfolge falsch, gleiche Zeitstempel überschrieben einander.** Der Schlüssel war die Empfangszeit als RFC3339Nano — das Format lässt Nullen am Ende weg („…00.1Z", „…00.12Z") und sortiert als Text nicht nach der Zeit. Folgen: Ein später angekommener Eintrag lag hinter der Lese-Marke und wurde erst nach einem Neustart weitergeleitet; Einträge derselben Sekunde gingen in falscher Reihenfolge hinaus; zwei Nachrichten mit gleichem Zeitstempel (grobe Uhr, mehrere Geräte zugleich) — eine ging verloren; stellte NTP die Uhr zurück, blieb alles Neue liegen. Jetzt ist der Schlüssel eine laufende Nummer (zählt nach Neustart weiter), die Empfangszeit steht im Eintrag (`time`). Einträge im alten Format werden beim Update zuerst und mit der Zeit aus dem Schlüssel weitergeleitet. Tests: `pkg/storage/badger_test.go`, `pkg/worker/worker_test.go` (bisher ohne Tests).
+**Upgrade:** the local broker now listens on `127.0.0.1` only. If zigbee2mqtt runs on another host, set `mqtt.bind` and an account in `mqtt.local_users` — otherwise the proxy refuses to start. Without `server.username`/`server.password` the dashboard is reachable on `127.0.0.1` only.
 
-### Sicherheit
-- **Client-ID je Box:** Haupt-Upstream, Routen und Steuerung trugen auf allen Boxen dieselben festen IDs (`mlc2af-proxy-forwarder-v5`, `…-route-<name>`, `svc-edgeproxy-ctl`) — zwei Boxen am selben Broker warfen sich gegenseitig hinaus (rund 3000 Neuverbindungen in 8 s, Werte stauten sich). Jetzt `mqtt.client_id` oder `mlc2af-proxy-<machine-id>`. Test: `pkg/config/clientid_test.go`.
-- **Weiterleitung: Erfolg und Ablehnung richtig eingeteilt, Abgelehntes wird aufbewahrt.** Jeder MQTT-Reason-Code ≠ 0 galt als endgültig und die Nachricht wurde gelöscht — auch 0x10 („keine Abonnenten", ein Erfolg); Codes ab 0x80 meldet paho als Fehler, die wurden endlos wiederholt. HTTP wiederholte auch 400/413 endlos; ungültiges JSON wurde still verworfen und als weitergeleitet gezählt. Jetzt: 0x00/0x10 Erfolg; endgültig nur Formfehler (0x90, 0x95, 0x99; HTTP 400/413/415/422; ungültiges JSON) — diese landen in `dead-letter.jsonl` neben dem Puffer, bevor sie ihn verlassen; alles andere wird wiederholt. Neue Zähler `messages_dead_lettered_total`, `messages_dropped_buffer_full_total`. Die Dedup-Liste wird alle 10 s aufgeräumt (wuchs mit jedem neuen Topic unbegrenzt). Tests: `pkg/forwarder/classify_test.go`, `pkg/worker/worker_test.go`, `pkg/broker/routes_test.go`.
-- **Fernsteuerung:** gespeicherte (retained) Befehle werden verworfen — ein retained „stop" beendete den Proxy nach jedem Neustart sofort wieder. Eine Pause (`pause`/`drain`) endet spätestens nach `monitor.max_pause_minutes` (Standard 60) — vorher konnte eine vergessene Pause den Puffer bis zum Tail-Drop füllen. `restart` endet mit Exit-Code 75, damit auch die Paket-Unit (`Restart=on-failure`) neu startet; bisher blieb die Box nach „Neu starten" aus. Tests: `pkg/svcmon/svcmon_test.go`.
-- **Lokaler Broker nur noch lokal, von außen nur mit Konto.** Er lauschte fest auf allen Schnittstellen und nahm jede Verbindung ohne Anmeldung an: Wer das Netz der Box erreichte, konnte Messwerte einspeisen, die mit dem echten Token in den Nachweis eines Mandanten gingen, und allen Verkehr mitlesen — über den WebSocket-Port auch eine fremde Webseite im Browser eines Nutzers. Jetzt `mqtt.bind` (Standard `127.0.0.1`, gilt für TCP und WebSocket); von Loopback ohne Anmeldung, von jeder anderen Adresse nur mit einem Konto aus `mqtt.local_users`; von außen erreichbar ohne Konto → der Proxy startet nicht. Größte Nachricht 1 MiB (vorher unbegrenzt: 100 MB wurden angenommen und gingen still verloren). Tests: `pkg/broker/auth_test.go`, `pkg/config/secure_test.go`.
-- **Dashboard:** ohne `server.username`/`server.password` nur auf `127.0.0.1`; mit Anmeldung auf `server.host`. Kein `Access-Control-Allow-Origin: *` mehr; Sicherheits-Header (CSP, nosniff, frame-ancestors); gin im Release-Modus; Live-Tunnel `/mqtt` nur von derselben Herkunft. Der MQTT-Baum wird über DOM-Funktionen statt `innerHTML` gebaut — Topic-Namen und JSON-Schlüssel konnten Code im Browser ausführen (gespeichertes XSS). Tests: `pkg/web/server_test.go`.
-- **Pakete enthielten die echte Konfiguration.** `build/package/nfpm.yaml` packte die lokale `config.yaml` (mit Upstream-Passwort und Ingest-Token) lesbar für alle (0644) nach `/etc/mlc-edge-proxy/`; die so gebauten `.deb`/`.rpm` lagen seit 1.0.2 unter `build/dist/` in diesem öffentlichen Repository. Die enthaltenen Zugangsdaten sind nicht mehr gültig (geprüft 07.11.2026). Jetzt wird immer `config.example.yaml` gepackt, als Konfigurationsdatei, die ein Update nicht überschreibt, mit 0640 und Gruppe `mlc-edge-proxy`; gebaute Pakete gehören nicht mehr ins Repository; `nfpm` ist auf v2.47.0 festgelegt; Lizenz im Paket GPL-3.0-only statt MIT.
-- **Bekannte Schwachstellen behoben:** Go-Werkzeugkette `go1.26.10` (Standardbibliothek: `net/http`, `crypto/tls`, `crypto/x509`, `html/template`, `net/textproto`), `golang.org/x/net` v0.60.0, `quic-go` v0.59.1, `klauspost/compress` v1.20.2 — 15 erreichbare Schwachstellen laut govulncheck, erreichbar über Dashboard und HTTP-Weiterleitung. Geprüft wird der Proxy seit 07.11.2026 mit `task edge:check` aus dem MLC Sensor Monitor.
-- **Kein echtes Token im Beispiel:** `config.example.yaml` trug ein früheres, inzwischen widerrufenes Ingest-Token als Kommentar; jetzt ein Platzhalter.
+### Added
+- Routes: additional upstreams, each with its own credentials, buffer, filter and device list.
+- Self-monitoring: heartbeat to the MLC Sensor Monitor and remote pause/resume/restart/stop (`monitor.enabled`).
+- Downstream routing from the upstream to local clients.
+- Settings `mqtt.bind`, `mqtt.local_users`, `mqtt.client_id`, `monitor.max_pause_minutes`.
+- Permanently rejected messages are kept in `dead-letter.jsonl` instead of being deleted.
+- Counters for dead-lettered and tail-dropped messages in `/api/v1/stats`.
+- `--version`; the version now comes from the `VERSION` file.
+- systemd units for running from the repository (`deploy/systemd/`).
 
-### Hinzugefügt
-- **Routen (mehrere Upstreams):** Neuer Konfig-Abschnitt `routes:`. Jede Route ist ein zusätzlicher Upstream mit eigenem Zugang (z. B. Ingest-Token eines anderen Mandanten), eigenem Filter und **eigenem Puffer + Worker** (`<storage.path>/routes/<name>`), damit ein unerreichbares Ziel die anderen nicht aufhält. Optional `devices`: Dann gehen nur diese Zigbee-Geräte hinaus und ein auf sie **gekürztes `bridge/devices`**; andere `bridge/*`-Meldungen gehen über eine Route mit Geräteliste nie hinaus. Ohne `routes:` verhält sich der Proxy wie bisher. Tests: `pkg/broker/routes_test.go`.
-- **Self-Monitoring & Fernsteuerung (optional, standardmäßig an):** Der Proxy meldet sich beim MLC Sensor Monitor als Dienst `svc-edgeproxy` per **Heartbeat** (HTTP-Ingest: `service_up`/`service_state`/`svc_uptime_s`) — fällt er aus, erzeugt der Monitor automatisch ein Ereignis (der Zigbee-Edge-Pfad ist damit lückenlos überwacht). Zusätzlich **Fernsteuerung** über `cmd/svc/<name>` auf dem ohnehin genutzten Upstream-Broker: `pause`/`drain` (Upstream-Versand ruht, Daten bleiben gepuffert — kein Verlust), `resume` (Puffer leeren), `restart`/`stop` (geordnetes Beenden). Bewusst **lose gekoppelt** (kein Import von Monitor-Paketen, reines HTTP+MQTT) und über `monitor.enabled: false` vollständig abschaltbar — der Proxy läuft auch ohne Monitor normal weiter. Neues Paket `pkg/svcmon`, Konfig-Abschnitt `monitor:`, Worker-Pause-Gate (`SetPauseCheck`).
+### Fixed
+- Buffer entries could stay stuck until restart, leave out of order, or overwrite each other.
+- Tail drop measured the database file instead of the pending buffer.
+- 100 % CPU from tombstone scans in the buffer.
+- MQTT reason code 0x10 (no subscribers) was treated as rejection and the message deleted.
+- One permanently rejected message (MQTT ≥ 0x80, HTTP 400/413) stalled all forwarding.
+- Invalid JSON in HTTP mode was dropped silently and counted as forwarded.
+- Remote `restart` exited with code 0, so the package unit did not restart.
+- A route lost a renamed device; it now follows the IEEE address.
+- Packages carried version 1.0.2 regardless of the release.
+
+### Security
+- The local broker accepted unauthenticated connections on all interfaces.
+- The WebSocket port accepted any origin; `/mqtt` now requires the same origin.
+- Dashboard: `Access-Control-Allow-Origin: *` removed, security headers added, stored XSS fixed.
+- Retained remote-control commands are ignored; a pause ends after `monitor.max_pause_minutes`.
+- All boxes used the same MQTT client IDs and kicked each other off the broker.
+- Packages contained the local `config.yaml` with credentials; they now ship the example, mode 0640.
+- Messages above 1 MiB are refused; the deduplication list no longer grows without bound.
+- 15 reachable vulnerabilities fixed (Go 1.26.10, x/net, quic-go, compress).
+- Removed a revoked ingest token from `config.example.yaml`.
 
 ## [1.0.2] - 2026-06-07
 
-### Hinzugefügt
-- **Disk Full Protection (Tail Drop)**: Überwachung der BadgerDB-Festplattenbelegung. Bei Erreichen eines einstellbaren Limits (Default: 1024 MB) blockt der Proxy neue Nachrichten, um eine Betriebssystem-Korruption (Raspberry Pi) bei vollen SD-Karten zuverlässig zu verhindern.
-- **Bidirektionale MQTT Bridge**: Das mitgelieferte CLI-Hilfstool (`bin/mqttbridge`) unterstützt nun ein `--bidi` Flag für bidirektionales Routing (`Master <-> Slave`) inklusive Thread-sicherer Loop-Detection (Schutz vor Echo-Loops).
+### Added
+- **Disk Full Protection (Tail Drop)**: Monitoring of BadgerDB disk usage. Upon reaching a configurable limit (Default: 1024 MB), the proxy silently drops new messages to reliably prevent OS corruption (e.g. on Raspberry Pi SD cards) from disk exhaustion.
+- **Bidirectional MQTT Bridge**: The included CLI helper tool (`bin/mqttbridge`) now supports a `--bidi` flag for bidirectional routing (`Master <-> Slave`) with thread-safe loop detection to prevent echo loops.
 
 ## [1.0.0] - 2026-06-07
 
-### Hinzugefügt
-- **MQTT 5 Topic Aliases**: Reduziert massiv den Payload-Overhead durch Ersetzen langer Topics mit Integern (inklusive automatischer Upstream-Restart Erkennung).
-- **Intelligente JSON Deduplizierung**: Filtert redundante Sensordaten (Debouncing) basierend auf dem exakten Payload. Unterstützung für optionale `ignore_keys` (z.B. `last_seen`, `linkquality`).
-- **Poison Message Protection**: Worker stoppt Endlosschleifen automatisch, wenn der Upstream-Broker Nachrichten aufgrund fehlerhafter Topics oder Payloads abweist (`Reason Code != 0` oder Wildcards in Publish-Topics).
-- **Graceful Shutdown**: Sicheres Herunterfahren der Webserver-Routinen und der BadgerDB beim Empfang von OS-Signalen (`SIGTERM`/`SIGINT`), was aktiv vor Datenbankkorruption schützt.
-- **Dashboard Absicherung (Security)**: Der Diagnose-Webserver (`:8097`) kann nun über `server.enable: false` komplett deaktiviert oder durch HTTP Basic Auth (`username` & `password`) abgesichert werden (inklusive Websocket-Protection).
-- **Paketierung (DEB/RPM)**: Release-Builds via nfpm/goreleaser für native Linux-Installation als systemd-Service.
+### Added
+- **MQTT 5 Topic Aliases**: Massively reduces payload overhead by replacing long topics with integers (includes automatic upstream restart detection).
+- **Smart JSON Deduplication**: Filters redundant sensor data (debouncing) based on the exact payload. Supports optional `ignore_keys` (e.g., `last_seen`, `linkquality`).
+- **Poison Message Protection**: Worker automatically stops endless loops if the upstream broker rejects messages due to invalid topics or payloads (`Reason Code != 0` or wildcards in publish topics).
+- **Graceful Shutdown**: Safe shutdown of web server routines and BadgerDB upon receiving OS signals (`SIGTERM`/`SIGINT`), actively protecting against database corruption.
+- **Dashboard Security**: The diagnostic web server (`:8097`) can now be completely disabled via `server.enable: false` or secured with HTTP Basic Auth (`username` & `password`), including websocket protection.
+- **Packaging (DEB/RPM)**: Release builds via nfpm/goreleaser for native Linux installation as a systemd service.
 
-### Geändert
-- **Worker Refactoring**: Deutlich robustere Queue-Abwicklung und sauberere BadgerDB-Integration.
-- **Konfigurationsdatei**: Die `config.yaml` wurde um zahlreiche neue Optionen erweitert (`deduplicate_interval_ms`, `topic_alias`, `server.enable`, `server.username` etc.).
+### Changed
+- **Worker Refactoring**: Significantly more robust queue processing and cleaner BadgerDB integration.
+- **Configuration File**: The `config.yaml` has been expanded with numerous new options (`deduplicate_interval_ms`, `topic_alias`, `server.enable`, `server.username`, etc.).

@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -52,7 +53,12 @@ func main() {
 // run ist der eigentliche Ablauf; der Rückgabewert ist der Exit-Code (die defers laufen vorher).
 func run() int {
 	configPath := flag.String("config", "config.yaml", "Pfad zur Konfigurationsdatei")
+	showVersion := flag.Bool("version", false, "Version ausgeben und beenden")
 	flag.Parse()
+	if *showVersion {
+		fmt.Printf("mlc-edge-proxy version %s\n", Version)
+		return 0
+	}
 
 	startTime := time.Now()
 	log.Printf("Starte MLC Edge Proxy (Version: %s)...", Version)

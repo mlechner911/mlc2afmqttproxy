@@ -136,7 +136,7 @@ Copyright (C) 2026 Michael Lechner
 This license ensures the mandatory attribution of the original author. Anyone who modifies or redistributes this project must retain the copyright notice and make their modifications available as open source under the same license terms (GPLv3). See the `LICENSE` file for the full license terms.
 
 ## Changelog
-All release notes and changes can be found in the [CHANGELOG_en.md](CHANGELOG_en.md).
+All release notes and changes can be found in the [CHANGELOG.md](CHANGELOG.md).
 
 <!-- mlcai-private -->
 ## Project documentation (`.mlcai/`)

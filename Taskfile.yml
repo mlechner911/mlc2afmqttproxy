@@ -1,9 +1,10 @@
 version: '3'
 
 vars:
-  # Versucht die Git-Version zu lesen, Fallback ist "v1.1.0"
+  # VERSION-Datei ist die einzige Quelle der Version (semver: Fix → Patch, Feature → Minor).
+  # Bis 07.11.2026 kam sie aus `git describe` mit festem Rückfall im Taskfile.
   VERSION:
-    sh: git describe --tags --always --dirty 2>/dev/null || echo "v1.1.0"
+    sh: cat VERSION
   LDFLAGS: "-X 'main.Version={{.VERSION}}'"
 
 tasks:
@@ -82,7 +83,71 @@ tasks:
   package:
     desc: "Baut RPM und DEB Pakete via nfpm"
     deps: [build]
+    env:
+      VERSION: "{{.VERSION}}"
     cmds:
       - mkdir -p build/dist
       - cd build/package && go run github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0 pkg --packager rpm --target ../dist/
       - cd build/package && go run github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0 pkg --packager deb --target ../dist/
+
+  version:check:
+    desc: "Versionsstempel am gebauten Binary prüfen: task build meldet VERSION, ein nacktes go build meldet dev"
+    deps: [build]
+    cmds:
+      - |
+        want="{{.VERSION}}"
+        got=$(./bin/mlc-edge-proxy --version | awk '{print $NF}')
+        [ "$got" = "$want" ] || { echo "✗ bin/mlc-edge-proxy meldet '$got', VERSION ist '$want'"; exit 1; }
+        got=$(./bin/mqttbridge -version | awk '{print $NF}')
+        [ "$got" = "$want" ] || { echo "✗ bin/mqttbridge meldet '$got', VERSION ist '$want'"; exit 1; }
+        tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+        go build -o "$tmp/p" ./cmd/proxy
+        got=$("$tmp/p" --version | awk '{print $NF}')
+        [ "$got" = "dev" ] || { echo "✗ ungestempelter Build meldet '$got' statt dev — die Nummer steht im Quelltext"; exit 1; }
+        echo "✓ Version $want gestempelt, ungestempelt dev"
+
+  vet:
+    desc: "go vet"
+    cmds:
+      - go vet ./...
+
+  test:
+    desc: "Tests mit Race-Detector"
+    cmds:
+      - go test -race -count=1 ./...
+
+  vuln:
+    desc: "Bekannte Schwachstellen im erreichbaren Code (govulncheck) — vor jedem Release"
+    cmds:
+      - go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
+  check:
+    desc: "Alles vor einem Merge/Release: vet, Tests, Schwachstellen, Versionsstempel"
+    cmds:
+      - task: vet
+      - task: test
+      - task: vuln
+      - task: version:check
+
+  semgrep:
+    desc: 'Statische Sicherheitsprüfung: Bericht + Kurzfassung + Urteils-Abgleich (wöchentlich).'
+    preconditions:
+      - sh: command -v mlc-semgrep-baseline
+        msg: "mlc-semgrep-* fehlen — in mlcintegration einmal `task install-all` laufen lassen."
+    cmds:
+      - mkdir -p reports
+      # atomar: ein abgebrochener Lauf darf keinen halben Bericht hinterlassen; --jobs 4 wegen io_uring/RLIMIT_MEMLOCK
+      - semgrep scan --config {{.CONFIG | default "p/golang"}} --jobs 4 --json --quiet --output reports/.semgrep.tmp.json . || true
+      - mv reports/.semgrep.tmp.json reports/semgrep.json
+      - mlc-semgrep-summary reports/semgrep.json
+      - mlc-semgrep-baseline --report reports/semgrep.json --baseline semgrep-baseline.yaml
+
+  semgrep:review:
+    desc: 'Neue Befunde zur Beurteilung nachtragen (verdict/reason dann von Hand).'
+    cmds:
+      - mlc-semgrep-baseline --report reports/semgrep.json --baseline semgrep-baseline.yaml --update
+
+  semgrep:new:
+    desc: 'Nur was seit einem Bezugspunkt hinzukam — bricht ab, für CI.'
+    cmds:
+      - semgrep scan --config {{.CONFIG | default "p/golang"}} --jobs 4 --baseline-commit {{.SEIT | default "main"}} --error --quiet .

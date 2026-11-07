@@ -22,8 +22,19 @@ Zigbee-Geräte → zigbee2mqtt → lokaler Broker des Proxys (:1884) → Puffer 
   Puffer — auch über einen Neustart oder Stromausfall hinweg — und geht später mit der
   **ursprünglichen Zeit** hinaus (`mqtt.timestamp_mode`).
 - Gelöscht wird eine Nachricht erst, wenn der Upstream sie angenommen hat. Lehnt er sie
-  **dauerhaft** ab (MQTT-5-Reason-Code, etwa ungültiges Topic), wird nur diese eine verworfen;
-  der Rest läuft weiter.
+  **endgültig** ab — nur bei Formfehlern: MQTT 0x90 ungültiges Topic, 0x95 zu groß, 0x99
+  Nutzlastformat; HTTP 400, 413, 415, 422; ungültiges JSON —, wird sie in
+  **`<storage.path>/dead-letter.jsonl`** abgelegt (je Route im Routen-Puffer; mit Empfangszeit,
+  Topic, Grund und Nutzlast) und erst dann aus dem Puffer genommen; der Rest läuft weiter. Eine
+  abgelegte Messung fehlt im Monitor — sie ist ein Befund, den jemand ansehen muss
+  (`messages_dead_lettered_total` in `stats`). Lässt sich die Datei nicht schreiben, bleibt die
+  Nachricht im Puffer.
+- Jede andere Ablehnung — auch „nicht autorisiert" (gesperrtes Token, übernommene Verbindung) —
+  gilt als vorübergehend: Die Nachricht bleibt, der Proxy versucht es mit wachsendem Abstand
+  erneut. Lieber steht die Weiterleitung, als dass Messwerte verschwinden.
+- Größte angenommene Nachricht 1 MiB. Ist der Puffer voll (`storage.max_size_mb`), nimmt der
+  Proxy nichts mehr an (Tail-Drop); diese Werte fehlen — gezählt in
+  `messages_dropped_buffer_full_total`.
 
 ## Anmeldung am Upstream
 

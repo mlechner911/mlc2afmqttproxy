@@ -84,7 +84,9 @@ func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packe
 
 	// "Tail Drop": Wenn die Festplatte (DB) voll ist, verwerfen wir sofort alle neuen Nachrichten.
 	if h.diskFull.Load() {
-		// Verwerfen, ohne zu speichern oder weiterzuleiten
+		// Verwerfen, ohne zu speichern oder weiterzuleiten — gezählt, denn diese Werte fehlen im
+		// Nachweis (/stats: messages_dropped_buffer_full_total).
+		metrics.IncDroppedFull()
 		return pk, nil
 	}
 
@@ -244,6 +246,7 @@ func StartLocalBroker(bind string, users []config.LocalUser, port int, wsPort in
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
+			hook.pruneLastSeen(time.Now())
 			// GEPUFFERTE (noch nicht weitergeleitete) Menge messen — nicht die rohe
 			// BadgerDB-Dateigröße (die durch Value-Log-Churn der Realität nachhinkt und
 			// fälschlich Tail-Drop auslöst, obwohl real fast nichts gepuffert ist).
@@ -303,3 +306,22 @@ func localCapabilities() *mqtt.Capabilities {
 	return c
 }
 
+// pruneLastSeen entfernt Dedup-Einträge, die älter als das Intervall sind — danach vergleicht
+// OnPublish ohnehin nicht mehr mit ihnen. Bis 07.11.2026 wuchs die Map mit jedem neuen Topic
+// unbegrenzt: 200 000 erfundene Topics kosteten 1,4 GB Speicher (Sicherheitsprüfung P3-08).
+func (h *StoreHook) pruneLastSeen(now time.Time) int {
+	if h.dedupInterval <= 0 {
+		return 0
+	}
+	maxAge := time.Duration(h.dedupInterval) * time.Millisecond
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	n := 0
+	for k, v := range h.lastSeen {
+		if now.Sub(v.timestamp) >= maxAge {
+			delete(h.lastSeen, k)
+			n++
+		}
+	}
+	return n
+}

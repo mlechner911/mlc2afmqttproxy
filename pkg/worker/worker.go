@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"os"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -36,6 +37,56 @@ type Worker struct {
 	// (Fernsteuerung „pause"/„drain"). Eingehende Nachrichten werden weiter im
 	// Store&Forward-Puffer gehalten — kein Datenverlust; „resume" leert den Puffer.
 	pauseCheck func() bool
+
+	// deadLetter ist die Datei, in die endgültig abgelehnte Nachrichten geschrieben werden, bevor
+	// sie aus dem Puffer gelöscht werden (JSON Lines). Leer = nur protokollieren und löschen.
+	deadLetter string
+}
+
+// SetDeadLetter legt die Datei für endgültig abgelehnte Nachrichten fest.
+func (w *Worker) SetDeadLetter(path string) { w.deadLetter = path }
+
+// DeadLetterEntry ist eine Zeile der Dead-Letter-Datei.
+type DeadLetterEntry struct {
+	RejectedAt string          `json:"rejected_at"`
+	ReceivedAt string          `json:"received_at"`
+	Topic      string          `json:"topic"`
+	Reason     string          `json:"reason"`
+	Payload    json.RawMessage `json:"payload,omitempty"`
+	PayloadRaw string          `json:"payload_raw,omitempty"`
+}
+
+// writeDeadLetter hängt die Nachricht an die Dead-Letter-Datei an (0600, fsync). Erst danach
+// darf sie aus dem Puffer — eine abgelehnte Messung ist ein Befund, kein Abfall (GxP). Bis
+// 07.11.2026 wurde sie nur protokolliert und gelöscht (Sicherheitsprüfung P3-07).
+func (w *Worker) writeDeadLetter(wr broker.PayloadWrapper, ts time.Time, reason error) error {
+	if w.deadLetter == "" {
+		return nil
+	}
+	e := DeadLetterEntry{RejectedAt: time.Now().UTC().Format(time.RFC3339Nano), ReceivedAt: ts.UTC().Format(time.RFC3339Nano),
+		Topic: wr.Topic, Reason: reason.Error()}
+	if json.Valid(wr.Payload) {
+		e.Payload = json.RawMessage(wr.Payload)
+	} else {
+		e.PayloadRaw = string(wr.Payload)
+	}
+	line, err := json.Marshal(e)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(w.deadLetter, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(append(line, '\n')); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // SetPauseCheck hinterlegt eine Funktion, die das Pausieren des Upstream-Versands
@@ -169,9 +220,16 @@ func (w *Worker) processNext() (bool, error) {
 		
 		var permErr *forwarder.PermanentError
 		if errors.As(err, &permErr) {
-			log.Printf("[Worker] Nachricht dauerhaft abgelehnt (Poison Message), verwerfe Eintrag für Topic: %s", wrapper.Topic)
+			// Ablegen, dann löschen. Scheitert das Ablegen, bleibt sie im Puffer (fail closed).
+			if derr := w.writeDeadLetter(wrapper, ts, err); derr != nil {
+				log.Printf("[Worker] Abgelehnte Nachricht (%s) konnte nicht abgelegt werden: %v — bleibt im Puffer", wrapper.Topic, derr)
+				w.handleFailure()
+				return false, derr
+			}
+			log.Printf("[Worker] Nachricht endgültig abgelehnt (%v), abgelegt in %s: Topic %s", err, w.deadLetter, wrapper.Topic)
+			metrics.IncDeadLettered()
 			w.store.Delete(key)
-			return true, nil // Gilt als "verarbeitet", Queue geht weiter
+			return true, nil // Queue geht weiter
 		}
 		
 		metrics.IncForwardFailed()

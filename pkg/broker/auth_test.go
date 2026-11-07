@@ -85,10 +85,17 @@ func startBroker(t *testing.T, bind string, users []config.LocalUser) (*storage.
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = srv.Close(); st.Close() })
+	// Bereit = ein vollständiger MQTT-Verbindungsaufbau von Loopback. Ein bloßes TCP-Öffnen und
+	// Schließen lässt mochi mitten in EstablishConnection, und Server.Close in t.Cleanup läuft
+	// dagegen (Datenwettlauf in mochi 2.7.9, server.go:401 gegen :1499).
+	host := bind
+	if !config.IsLoopbackHost(host) {
+		host = "127.0.0.1"
+	}
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if c, err := net.Dial("tcp", net.JoinHostPort(bind, fmt.Sprint(port))); err == nil {
-			c.Close()
+		if c, err := connect(net.JoinHostPort(host, fmt.Sprint(port)), "", ""); err == nil {
+			c.Disconnect(10)
 			return st, port
 		}
 		time.Sleep(20 * time.Millisecond)

@@ -3,6 +3,8 @@ package worker
 import (
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -155,5 +157,55 @@ func TestAlterEintragMitZeitAusDemSchluessel(t *testing.T) {
 	w.runBatch()
 	if len(z.gesendet) != 1 || !z.gesendet[0].zeit.Equal(alt) {
 		t.Errorf("gesendet %v, erwartet Zeit %v", z.gesendet, alt)
+	}
+}
+
+// TestAbgelehnteNachrichtWirdAbgelegt (P3-07): Eine endgültig abgelehnte Messung ist ein Befund,
+// kein Abfall — sie steht in der Dead-Letter-Datei, bevor sie den Puffer verlässt; die anderen
+// gehen weiter hinaus.
+func TestAbgelehnteNachrichtWirdAbgelegt(t *testing.T) {
+	s := puffer(t)
+	z := &ziel{erreichbar: true, ablehnen: map[string]bool{"zigbee2mqtt/kaputt": true}}
+	w := neuerWorker(s, z)
+	dl := filepath.Join(t.TempDir(), "dead-letter.jsonl")
+	w.SetDeadLetter(dl)
+	empfangen := time.Date(2026, 11, 7, 10, 0, 0, 0, time.UTC)
+	ablegen(t, s, "zigbee2mqtt/a", empfangen)
+	ablegen(t, s, "zigbee2mqtt/kaputt", empfangen)
+	ablegen(t, s, "zigbee2mqtt/b", empfangen)
+	w.runBatch()
+	if n, _ := s.GetSize(); n != 0 {
+		t.Fatalf("%d im Puffer, erwartet 0", n)
+	}
+	if len(z.gesendet) != 2 {
+		t.Fatalf("gesendet %v, erwartet a und b", z.gesendet)
+	}
+	raw, err := os.ReadFile(dl)
+	if err != nil {
+		t.Fatalf("Dead-Letter-Datei fehlt: %v", err)
+	}
+	var e DeadLetterEntry
+	if err := json.Unmarshal(raw, &e); err != nil {
+		t.Fatalf("Zeile nicht lesbar: %v (%s)", err, raw)
+	}
+	if e.Topic != "zigbee2mqtt/kaputt" || e.ReceivedAt != "2026-11-07T10:00:00Z" || string(e.Payload) != `{"temperature":5}` || e.Reason == "" {
+		t.Errorf("Eintrag %+v", e)
+	}
+	if fi, _ := os.Stat(dl); fi.Mode().Perm() != 0o600 {
+		t.Errorf("Rechte %v, want 0600", fi.Mode().Perm())
+	}
+}
+
+// TestNichtAblegbarBleibtImPuffer: Lässt sich die Dead-Letter-Datei nicht schreiben, wird nichts
+// gelöscht (fail closed).
+func TestNichtAblegbarBleibtImPuffer(t *testing.T) {
+	s := puffer(t)
+	z := &ziel{erreichbar: true, ablehnen: map[string]bool{"zigbee2mqtt/kaputt": true}}
+	w := neuerWorker(s, z)
+	w.SetDeadLetter(filepath.Join(t.TempDir(), "gibt-es-nicht", "dead-letter.jsonl"))
+	ablegen(t, s, "zigbee2mqtt/kaputt", time.Now())
+	w.runBatch()
+	if n, _ := s.GetSize(); n != 1 {
+		t.Fatalf("%d im Puffer, erwartet 1 (nicht ablegbar → nicht löschen)", n)
 	}
 }

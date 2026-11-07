@@ -21,8 +21,19 @@ Zigbee devices → zigbee2mqtt → proxy's local broker (:1884) → buffer (Badg
   across a restart or power loss — and is sent later with its **original time**
   (`mqtt.timestamp_mode`).
 - A message is deleted only once the upstream has accepted it. If the upstream rejects it
-  **permanently** (MQTT 5 reason code, e.g. invalid topic), only that one is dropped; the rest
-  continues.
+  **permanently** — only for format errors: MQTT 0x90 invalid topic, 0x95 too large, 0x99 payload
+  format; HTTP 400, 413, 415, 422; invalid JSON — it is written to
+  **`<storage.path>/dead-letter.jsonl`** (per route in the route's buffer; with receive time, topic,
+  reason and payload) and only then removed from the buffer; the rest continues. A dead-lettered
+  measurement is missing in the monitor — it is a finding someone has to look at
+  (`messages_dead_lettered_total` in `stats`). If the file cannot be written, the message stays in
+  the buffer.
+- Any other rejection — including "not authorized" (revoked token, taken-over connection) — counts
+  as temporary: the message stays and the proxy retries with growing intervals. Better a stalled
+  forwarding than vanished measurements.
+- Largest accepted message 1 MiB. When the buffer is full (`storage.max_size_mb`) the proxy accepts
+  nothing more (tail drop); those values are missing — counted in
+  `messages_dropped_buffer_full_total`.
 
 ## Authenticating to the upstream
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/mochi-mqtt/server/v2/packets"
 
@@ -156,5 +157,21 @@ func TestHookWritesToRoute(t *testing.T) {
 	_ = json.Unmarshal(val, &w)
 	if w.Topic != "zigbee2mqtt/0x00158d0000000a01" {
 		t.Errorf("Routen-Puffer enthält %q", w.Topic)
+	}
+}
+
+// TestPruneLastSeen (P3-08): Dedup-Einträge älter als das Intervall verschwinden — die Map wächst
+// nicht mehr mit jedem neuen Topic.
+func TestPruneLastSeen(t *testing.T) {
+	now := time.Now()
+	h := &StoreHook{dedupInterval: 1000, lastSeen: map[string]lastMsg{
+		"alt":  {timestamp: now.Add(-2 * time.Second)},
+		"frisch": {timestamp: now.Add(-100 * time.Millisecond)},
+	}}
+	if n := h.pruneLastSeen(now); n != 1 {
+		t.Errorf("entfernt %d, want 1", n)
+	}
+	if _, ok := h.lastSeen["frisch"]; !ok || len(h.lastSeen) != 1 {
+		t.Errorf("übrig %v", h.lastSeen)
 	}
 }

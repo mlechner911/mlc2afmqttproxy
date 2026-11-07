@@ -191,12 +191,12 @@ func (f *MQTT5Forwarder) Send(topic string, payload []byte, timestamp time.Time)
 
 	// Blockierendes Veröffentlichen
 	pubResp, err := f.client.Publish(f.ctx, pb)
-	if err != nil {
-		return err
+	var code byte
+	if pubResp != nil {
+		code = pubResp.ReasonCode
 	}
-
-	if pubResp != nil && pubResp.ReasonCode != 0 {
-		return &PermanentError{Err: fmt.Errorf("publish failed with reason code: %d", pubResp.ReasonCode)}
+	if err := ClassifyPuback(code, err); err != nil {
+		return err
 	}
 
 	log.Printf("[MQTT5-Upstream] Erfolgreich gesendet: Topic='%s', %d bytes (mit ts=%s)", topic, len(payload), tsStr)
@@ -304,3 +304,29 @@ func (f *MQTT5Forwarder) clientIDOr(def string) string {
 	return def
 }
 
+// ClassifyPuback teilt das Ergebnis eines QoS-1-Publish ein (MQTT 5, PUBACK-Reason-Code):
+//   - 0x00 Erfolg, 0x10 „keine Abonnenten" — ebenfalls Erfolg: Der Broker hat angenommen.
+//   - 0x90 Topic ungültig, 0x95 Paket zu groß, 0x99 Nutzlastformat ungültig → endgültig
+//     (PermanentError): Diese Nachricht wird nie angenommen; der Worker legt sie ab (Dead-Letter).
+//   - alles andere ≥ 0x80 (u. a. 0x87 nicht autorisiert — auch bei übernommener Client-ID oder
+//     gesperrtem Token, 0x97 Kontingent) und Verbindungsfehler → vorübergehend: wiederholen,
+//     nichts verwerfen.
+//
+// Bis 07.11.2026 galt jeder Code ≠ 0 als endgültig und die Nachricht wurde GELÖSCHT (0x10 auch),
+// während paho Codes ≥ 0x80 als Fehler meldet — die wurden endlos wiederholt
+// (Sicherheitsprüfung P3-07).
+func ClassifyPuback(code byte, err error) error {
+	switch code {
+	case 0x00, 0x10:
+		if err != nil && code == 0x00 {
+			return err // kein PUBACK erhalten (Verbindung, Zeitüberschreitung)
+		}
+		return nil
+	case 0x90, 0x95, 0x99:
+		return &PermanentError{Err: fmt.Errorf("upstream lehnt die Nachricht endgültig ab (reason code 0x%02x)", code)}
+	}
+	if err == nil {
+		err = fmt.Errorf("upstream reason code 0x%02x", code)
+	}
+	return err
+}

@@ -1,6 +1,7 @@
 package forwarder
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -52,9 +53,11 @@ func TestHTTPForwarder_Close(t *testing.T) {
 func TestHTTPForwarder_Send_InvalidPayload(t *testing.T) {
 	f := NewHTTPForwarder("http://example.com/ingest", "test-token")
 
-	// Ungültiges JSON sollte nil zurückgeben (verworfen)
+	// Ungültiges JSON ist endgültig abgelehnt (PermanentError → Dead-Letter), nicht still
+	// verworfen und als weitergeleitet gezählt (bis 07.11.2026, Sicherheitsprüfung P3-07).
 	err := f.Send("zigbee2mqtt/test", []byte("not-json"), time.Now())
-	if err != nil {
-		t.Errorf("Send with invalid JSON should return nil, got: %v", err)
+	var pe *PermanentError
+	if !errors.As(err, &pe) {
+		t.Errorf("Send with invalid JSON should return PermanentError, got: %v", err)
 	}
 }

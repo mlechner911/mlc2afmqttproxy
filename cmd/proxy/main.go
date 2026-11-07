@@ -120,6 +120,7 @@ func run() int {
 
 	// 5. Forward Worker erzeugen (Start erst nach dem optionalen Pause-Hook, s. u.)
 	fwWorker := worker.New(db, fwd, cfg.Worker)
+	fwWorker.SetDeadLetter(filepath.Join(cfg.Storage.Path, "dead-letter.jsonl"))
 	defer fwWorker.Stop()
 
 	// 6. Diagnose-Webserver und Live-Dashboard auf dem konfigurierten Port starten
@@ -257,7 +258,9 @@ func buildRoutes(cfg *config.Config) ([]broker.Route, []*worker.Worker) {
 			cs.SetClientID("mlc2af-proxy-forwarder-route-" + rc.Name)
 		}
 		routes = append(routes, broker.NewRoute(rc, store))
-		workers = append(workers, worker.New(store, fwd, cfg.Worker))
+		rw := worker.New(store, fwd, cfg.Worker)
+		rw.SetDeadLetter(filepath.Join(cfg.Storage.Path, "routes", rc.Name, "dead-letter.jsonl"))
+		workers = append(workers, rw)
 		log.Printf("[Route %s] aktiv: Modus %s, %d Gerät(e) (0 = alle)", rc.Name, rc.Mode, len(rc.Devices))
 	}
 	return routes, workers

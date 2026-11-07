@@ -78,8 +78,9 @@ func (f *HTTPForwarder) Send(topic string, payload []byte, timestamp time.Time) 
 	// 2. Payload parsen
 	var raw map[string]any
 	if err := json.Unmarshal(payload, &raw); err != nil {
-		log.Printf("[HTTP-Ingest] Ungültiges JSON im Payload (%s), ignoriert.", device)
-		return nil // Verwerfen, da nicht reparierbar (gibt kein Fehler an Worker zurück, um Blockade zu verhindern)
+		// Nicht reparierbar → endgültig; der Worker legt sie ab (Dead-Letter) statt sie still zu
+		// verwerfen und als „weitergeleitet" zu zählen (bis 07.11.2026, P3-07).
+		return &PermanentError{Err: fmt.Errorf("ungültiges JSON von %s: %v", device, err)}
 	}
 
 	// 3. Konvertierung der flachen Struktur in Ingest Readings
@@ -145,8 +146,7 @@ func (f *HTTPForwarder) Send(topic string, payload []byte, timestamp time.Time) 
 
 	// Antwort auswerten
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		log.Printf("[HTTP-Ingest] Fehler %d vom Server. Behalte im Puffer...", resp.StatusCode)
-		return fmt.Errorf("upstream returned http %d", resp.StatusCode)
+		return ClassifyHTTPStatus(resp.StatusCode)
 	}
 
 	log.Printf("[HTTP-Ingest] Erfolgreich gesendet: %d Readings für '%s' (TS: %s)", len(readings), device, timeStr)
@@ -169,4 +169,18 @@ func (f *HTTPForwarder) Subscribe(topics []string, handler DownstreamHandler) er
 
 // SetDownstreamHandler ist ein No-Op für den HTTP-Modus.
 func (f *HTTPForwarder) SetDownstreamHandler(h DownstreamHandler) {
+}
+
+// ClassifyHTTPStatus teilt eine Fehlerantwort des Ingest ein: 400, 413, 415, 422 lehnen DIESE
+// Nachricht ab und ändern sich durch Wiederholen nicht → endgültig (Dead-Letter). Alles andere
+// (401/403 Token, 404 Pfad, 408/429/5xx) ist eine Frage der Gegenstelle → behalten, wiederholen.
+// Bis 07.11.2026 wurde jede Nicht-2xx-Antwort endlos wiederholt; eine einzige zu große Nachricht
+// hielt die Weiterleitung aller anderen auf (P3-07).
+func ClassifyHTTPStatus(status int) error {
+	switch status {
+	case http.StatusBadRequest, http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType, http.StatusUnprocessableEntity:
+		return &PermanentError{Err: fmt.Errorf("ingest lehnt die Nachricht endgültig ab (http %d)", status)}
+	}
+	log.Printf("[HTTP-Ingest] Fehler %d vom Server. Behalte im Puffer...", status)
+	return fmt.Errorf("upstream returned http %d", status)
 }

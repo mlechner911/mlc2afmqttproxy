@@ -142,3 +142,15 @@ func TestPauseEndsAfterMaxPause(t *testing.T) {
 		t.Fatal("resume hebt die Pause nicht auf")
 	}
 }
+
+// TestCmdTopicPerCustomer (T-SENS-20261107-02.1): Mit Kundennummer hört die Box auf den Zweig
+// ihres Mandanten — der Monitor lässt eine Kunden-Verbindung seit 12.11.2026 nichts anderes
+// mehr lesen; ohne Nummer (Eigenbetrieb) auf das Plattform-Topic wie bisher.
+func TestCmdTopicPerCustomer(t *testing.T) {
+	if got := New(Options{Device: "svc-edgeproxy", Customer: "4111"}).cmdTopic(); got != "cmd/svc/4111/edgeproxy" {
+		t.Errorf("mit Kundennummer: %s", got)
+	}
+	if got := New(Options{Device: "svc-edgeproxy"}).cmdTopic(); got != "cmd/svc/edgeproxy" {
+		t.Errorf("Eigenbetrieb: %s", got)
+	}
+}

@@ -183,6 +183,7 @@ func run() int {
 		}
 		reporter := svcmon.New(svcmon.Options{
 			Device:         cfg.Monitor.Device,
+			Customer:       cfg.Monitor.CustomerNumber,
 			ClientID:       cfg.UpstreamClientID() + "-ctl",
 			IngestURL:      cfg.Monitor.IngestURL,
 			Token:          cfg.Monitor.Token,

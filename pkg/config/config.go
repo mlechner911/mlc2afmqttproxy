@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -73,6 +74,11 @@ type MonitorConf struct {
 	Control *bool `yaml:"control"`
 	// Device ist der Gerätename im Monitor (Default "svc-edgeproxy", muss mit svc- beginnen).
 	Device string `yaml:"device"`
+	// CustomerNumber ist die Kundennummer des Mandanten im Monitor (z. B. "4111"). Gesetzt →
+	// Fernsteuerung auf cmd/svc/<kundennr>/<device ohne svc->; leer → cmd/svc/<…> (nur
+	// Eigenbetrieb). Seit 12.11.2026 liest eine Box eines Kunden-Mandanten am Monitor nur noch
+	// ihren eigenen Zweig; ohne Kundennummer hat sie dort keine Fernsteuerung (T-SENS-20261107-02.1).
+	CustomerNumber string `yaml:"customer_number"`
 	// IntervalS ist das Heartbeat-Intervall in Sekunden (Default 30).
 	IntervalS int `yaml:"interval_s"`
 	// MaxPauseMinutes begrenzt „pause"/„drain" aus der Fernsteuerung (Default 60). Danach läuft
@@ -302,6 +308,10 @@ func LoadConfig(path string) (*Config, error) {
 	// so funktioniert die Anbindung ohne Extra-Konfiguration „out of the box".
 	if cfg.Monitor.Device == "" {
 		cfg.Monitor.Device = "svc-edgeproxy"
+	}
+	// Kundennummer nur Ziffern — sie wird Teil eines Topics (kein „/“, „+“, „#“).
+	if n := cfg.Monitor.CustomerNumber; n != "" && !regexp.MustCompile(`^[0-9]{1,12}$`).MatchString(n) {
+		return nil, fmt.Errorf("monitor.customer_number %q: nur Ziffern", n)
 	}
 	if cfg.Monitor.IntervalS == 0 {
 		cfg.Monitor.IntervalS = 30

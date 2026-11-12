@@ -101,6 +101,11 @@ monitor:
   # Gerätename im Monitor (muss mit "svc-" beginnen). Daraus folgt das Steuer-Topic
   # cmd/svc/edgeproxy (ohne "svc-").
   device: "svc-edgeproxy"
+  # Kundennummer des Mandanten im Monitor (Betreiberkonsole, z. B. "4111"). Gesetzt, hört die
+  # Fernsteuerung auf cmd/svc/<kundennummer>/edgeproxy — der Monitor lässt eine Box seit
+  # 12.11.2026 nur ihren eigenen Zweig lesen. Leer nur im Eigenbetrieb (cmd/svc/edgeproxy);
+  # bei einem Kunden ohne Nummer gibt es keine Fernsteuerung (Heartbeat läuft weiter).
+  customer_number: ""
   # Heartbeat-Intervall in Sekunden.
   interval_s: 30
   # Höchstdauer einer Pause aus der Fernsteuerung (pause/drain); danach läuft der Versand

@@ -42,7 +42,11 @@ type Options struct {
 	IngestURL      string        // HTTP-Ingest-Endpunkt (Heartbeat). Leer ⇒ Heartbeat aus.
 	Token          string        // X-Ingest-Token. Leer ⇒ Heartbeat aus.
 	Interval       time.Duration // Heartbeat-Intervall (Default 30 s)
-	ControlEnabled bool          // Fernsteuerung via cmd/svc/<name>
+	ControlEnabled bool          // Fernsteuerung via cmd/svc/<name> bzw. cmd/svc/<kundennr>/<name>
+	// Customer: Kundennummer des Mandanten im Monitor. Gesetzt → Steuer-Zweig
+	// cmd/svc/<kundennr>/<name>; leer → cmd/svc/<name> (nur Eigenbetrieb). Seit 12.11.2026 lässt
+	// der Monitor eine Kunden-Verbindung nur noch ihren eigenen Zweig lesen (T-SENS-20261107-02.1).
+	Customer string
 	Broker         string        // Upstream-MQTT (tcp://host:port) für die Steuerung
 	Username       string        // Upstream-MQTT-Benutzer (= Proxy-Upstream-Creds)
 	Password       string        // Upstream-MQTT-Passwort / Token
@@ -158,11 +162,20 @@ func (r *Reporter) sendHeartbeat() {
 	}
 }
 
+// cmdTopic: Steuer-Topic dieser Box — mit Kundennummer im Zweig des Mandanten, ohne im
+// Eigenbetrieb (gleiche Form wie ingest.ServiceCommandTopic im Monitor).
+func (r *Reporter) cmdTopic() string {
+	if r.o.Customer == "" {
+		return "cmd/svc/" + r.name
+	}
+	return "cmd/svc/" + r.o.Customer + "/" + r.name
+}
+
 // connectControl verbindet (best-effort, Auto-Reconnect) mit dem Upstream-Broker
 // und abonniert cmd/svc/<name>. Scheitert die Verbindung, läuft der Proxy normal
 // weiter; paho versucht im Hintergrund weiter zu verbinden.
 func (r *Reporter) connectControl(ctx context.Context) {
-	cmdTopic := "cmd/svc/" + r.name
+	cmdTopic := r.cmdTopic()
 	opts := mqtt.NewClientOptions().
 		AddBroker(r.o.Broker).
 		SetClientID(r.ctlClientID()).
@@ -244,7 +257,7 @@ func (r *Reporter) ack(action, commandID, status, errMsg string) {
 		"service": r.name, "action": action, "command_id": commandID,
 		"status": status, "error": errMsg, "state": r.state.Load(),
 	})
-	r.client.Publish("cmd/svc/"+r.name+"/ack", 1, false, ack)
+	r.client.Publish(r.cmdTopic()+"/ack", 1, false, ack)
 }
 
 // ctlClientID: je Box eindeutig (Options.ClientID). Bis 07.11.2026 fest Device+"-ctl" — zwei

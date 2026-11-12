@@ -2,7 +2,7 @@ module mlc2afmqttproxy
 
 go 1.26.0
 
-toolchain go1.26.10
+toolchain go1.26.11
 
 require (
 	github.com/dgraph-io/badger/v4 v4.9.1

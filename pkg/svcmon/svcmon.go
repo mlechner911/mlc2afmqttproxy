@@ -162,6 +162,17 @@ func (r *Reporter) sendHeartbeat() {
 	}
 }
 
+// subscribeGranted: Hat der Broker das Abo angenommen? Rückgabecode ab 0x80 = abgelehnt. Ein Token
+// ohne Ergebnis (anderer Typ) gilt als angenommen — paho meldet Fehler dann selbst.
+func subscribeGranted(t mqtt.Token, topic string) bool {
+	st, ok := t.(*mqtt.SubscribeToken)
+	if !ok {
+		return true
+	}
+	rc, found := st.Result()[topic]
+	return !found || rc < 0x80
+}
+
 // cmdTopic: Steuer-Topic dieser Box — mit Kundennummer im Zweig des Mandanten, ohne im
 // Eigenbetrieb (gleiche Form wie ingest.ServiceCommandTopic im Monitor).
 func (r *Reporter) cmdTopic() string {
@@ -185,8 +196,20 @@ func (r *Reporter) connectControl(ctx context.Context) {
 		SetConnectRetry(true).
 		SetConnectTimeout(10 * time.Second).
 		SetOnConnectHandler(func(c mqtt.Client) {
-			if t := c.Subscribe(cmdTopic, 1, r.onCommand); t.WaitTimeout(10*time.Second) && t.Error() != nil {
+			t := c.Subscribe(cmdTopic, 1, r.onCommand)
+			if !t.WaitTimeout(10 * time.Second) {
+				log.Printf("[svcmon] Subscribe %s: keine Antwort des Brokers", cmdTopic)
+				return
+			}
+			if t.Error() != nil {
 				log.Printf("[svcmon] Subscribe %s fehlgeschlagen: %v", cmdTopic, t.Error())
+				return
+			}
+			// Der Broker kann ein Abo ablehnen, ohne dass paho einen Fehler meldet (SUBACK 0x80).
+			// Bis 12.11.2026 stand dann trotzdem „Fernsteuerung aktiv“ im Log — etwa bei einer Box eines
+			// Kunden-Mandanten ohne monitor.customer_number, deren Abo der Monitor nicht mehr erlaubt.
+			if !subscribeGranted(t, cmdTopic) {
+				log.Printf("[svcmon] Fernsteuerung abgelehnt: %s — der Monitor erlaubt dieses Topic nicht (Kundennummer in monitor.customer_number?)", cmdTopic)
 				return
 			}
 			log.Printf("[svcmon] Fernsteuerung aktiv: %s", cmdTopic)

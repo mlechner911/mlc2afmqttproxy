@@ -119,7 +119,7 @@ tasks:
   vuln:
     desc: "Bekannte Schwachstellen im erreichbaren Code (govulncheck) — vor jedem Release"
     cmds:
-      - go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      - go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
   check:
     desc: "Alles vor einem Merge/Release: vet, Tests, Schwachstellen, Versionsstempel"

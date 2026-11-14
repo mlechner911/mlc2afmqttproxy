@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -168,22 +167,15 @@ func (f *MQTTForwarder) Send(topic string, payload []byte, timestamp time.Time) 
 	// 2. Zeitstempel-Behandlung
 	switch f.TimestampMode {
 	case "json_inject":
-		var data map[string]any
-		if err := json.Unmarshal(payload, &data); err == nil {
-			if _, exists := data[f.TimestampField]; !exists {
-				data[f.TimestampField] = timestamp.UnixMilli()
-				if newPayload, err := json.Marshal(data); err == nil {
-					finalPayload = newPayload
-				}
-			}
-		}
-	case "v5_property":
-		// Bei v5_property packen wir den Zeitstempel in den MQTT 5 Header
-		userProps = append(userProps, paho.UserProperty{
-			Key:   f.TimestampField,
-			Value: strconv.FormatInt(timestamp.UnixMilli(), 10),
-		})
+		// Die Empfangszeit der Box setzt IMMER die Box (P3-11, Sicherheitsprüfung 07.11.2026). Bis
+		// dahin blieb ein vom Absender mitgeschicktes Feld stehen — wer lokal veröffentlichen
+		// durfte, konnte Werte beliebig zurück- oder vordatieren. Ein mitgeschickter Wert geht
+		// nicht verloren, sondern steht daneben unter <Feld>_sender (Angabe, nicht Nachweis).
+		finalPayload = injectTimestamp(payload, f.TimestampField, timestamp)
 	}
+	// „v5_property" kommt hier nie an: cmd/proxy nimmt dafür den MQTT5Forwarder (eigener
+	// Schlüssel, den der Broker oben versteht). Der frühere Zweig hier schrieb „_ts" in Unix-ms —
+	// unerreichbar und, wäre er erreicht worden, für den Broker unlesbar.
 
 	// origin="local" zur Loop-Detection
 	userProps = append(userProps, paho.UserProperty{
@@ -295,3 +287,22 @@ func (f *MQTTForwarder) clientIDOr(def string) string {
 	return def
 }
 
+
+// injectTimestamp setzt die Empfangszeit (Unix-ms) unter field in ein JSON-Objekt — immer, auch
+// wenn der Absender das Feld schon mitgeschickt hat; dessen Wert steht dann unter field+"_sender"
+// (P3-11). Kein JSON-Objekt: unverändert.
+func injectTimestamp(payload []byte, field string, ts time.Time) []byte {
+	var data map[string]any
+	if err := json.Unmarshal(payload, &data); err != nil || data == nil {
+		return payload
+	}
+	if sent, exists := data[field]; exists {
+		data[field+"_sender"] = sent
+	}
+	data[field] = ts.UnixMilli()
+	out, err := json.Marshal(data)
+	if err != nil {
+		return payload
+	}
+	return out
+}

@@ -145,6 +145,14 @@ func run() int {
 	}
 
 	// 7. Downstream-Handler setzen (nach Mochi-Broker-Setup)
+	//
+	// P3-15 (Sicherheitsprüfung 07.11.2026): Dieser Weg ist WIRKUNGSLOS — mochiBroker.Publish
+	// erreicht keinen lokalen Client: Der Broker läuft ohne InlineClient (pkg/broker/mochi.go, mqtt.Options). So soll es
+	// bleiben, bis zwei Dinge gebaut sind, sonst wird er zur Fernsteuerung der Box:
+	//   1. eine Allowlist lokaler Ziel-Topics — nie „…/set" (Geräte schalten) und nie
+	//      „bridge/request" (zigbee2mqtt verwalten);
+	//   2. Inline-Nachrichten nicht puffern — sonst gingen sie als „Messwerte" wieder nach oben.
+	// Wer den InlineClient einschaltet, baut beides zuerst (Ticket T-SENS-20261107-02.6).
 	if cfg.MQTT.Downstream != nil && len(cfg.MQTT.Downstream.SubscribeTopics) > 0 && cfg.Mode == "mqtt" {
 		downstreamHandler := func(topic string, payload []byte) {
 			if err := mochiBroker.Publish(topic, payload, false, 1); err != nil {

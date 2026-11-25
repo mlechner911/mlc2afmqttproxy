@@ -1,109 +1,122 @@
 <!DOCTYPE html>
-<html lang="de" data-bs-theme="dark">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MLC Edge Proxy Dashboard</title>
+    <title>MLC Edge Proxy</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📦</text></svg>">
-    <!-- Lokales Bootstrap CSS -->
-    <link href="/assets/bootstrap.min.css" rel="stylesheet">
-    <!-- Custom Glassmorphism Styling -->
-    <link href="/assets/style.css" rel="stylesheet">
+    <link href="/assets/app.css" rel="stylesheet">
 </head>
-<body class="bg-dark text-light">
+<body class="flex h-dvh flex-col">
 
-<!-- Hintergrund-Effekte -->
-<div class="bg-shape shape-1"></div>
-<div class="bg-shape shape-2"></div>
-
-<div class="container py-5 position-relative z-1">
-    <!-- Header -->
-    <header class="d-flex justify-content-between align-items-center mb-5 glass-panel p-4 rounded-4">
-        <div>
-            <h1 class="h3 mb-0 fw-bold bg-gradient-text">MLC Edge Proxy</h1>
-            <p class="text-muted mb-0 small">Edge Ingestion & Store-Forward Buffer</p>
+<!-- Kopfzeile: bleibt stehen, nur der Inhalt darunter scrollt -->
+<header class="shrink-0 border-b border-slate-200 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
+    <div class="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 px-4 pt-3">
+        <div class="mr-auto">
+            <h1 class="text-lg font-bold">MLC Edge Proxy</h1>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Zigbee → Sensor Monitor · store &amp; forward</p>
         </div>
-        <div class="text-end">
-            <span id="conn-badge" class="badge bg-warning rounded-pill px-3 py-2">Connecting...</span>
-            <div id="uptime-display" class="small text-muted mt-2">Uptime: --</div>
-        </div>
-    </header>
+        <span id="state-pill" class="pill bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            <span class="size-2 rounded-full bg-current"></span><span id="state-text">Loading…</span>
+        </span>
+        <dl class="flex gap-5 text-xs">
+            <div><dt class="text-slate-500 dark:text-slate-400">Buffer</dt><dd id="hdr-buffer" class="font-semibold tabular-nums">–</dd></div>
+            <div><dt class="text-slate-500 dark:text-slate-400">Last forward</dt><dd id="hdr-forward" class="font-semibold tabular-nums">–</dd></div>
+            <div><dt class="text-slate-500 dark:text-slate-400">Zigbee</dt><dd id="hdr-zigbee" class="font-semibold">–</dd></div>
+            <div><dt class="text-slate-500 dark:text-slate-400">Uptime</dt><dd id="hdr-uptime" class="font-semibold tabular-nums">–</dd></div>
+            <div><dt class="text-slate-500 dark:text-slate-400">Version</dt><dd id="hdr-version" class="font-semibold">–</dd></div>
+        </dl>
+    </div>
+    <div class="mx-auto mt-2 flex max-w-7xl items-end px-4" role="tablist" aria-label="Views">
+        <button class="tab" role="tab" id="tab-stats" aria-controls="panel-stats" aria-selected="true">Statistics</button>
+        <button class="tab" role="tab" id="tab-live" aria-controls="panel-live" aria-selected="false">
+            Live <span id="live-lock" aria-hidden="true">🔒</span>
+        </button>
+        <button id="logout-btn" class="mb-1 ml-auto hidden text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">Sign out</button>
+    </div>
+</header>
 
-    <!-- Info & Config Cards -->
-    <div class="row g-4 mb-5">
-        <div class="col-md-6">
-            <div class="glass-card p-4 rounded-4 h-100">
-                <h6 class="text-uppercase text-muted fw-bold mb-3 small">Forwarding Mode</h6>
-                <div class="d-flex align-items-center">
-                    <div class="icon-circle bg-primary bg-opacity-10 text-primary me-3">
-                        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
-                    </div>
-                    <div>
-                        <h4 class="mb-0 fw-bold" id="mode-display">--</h4>
-                        <small class="text-muted" id="target-display">Loading...</small>
-                    </div>
+<main class="min-h-0 flex-1">
+    <!-- Statistik -->
+    <section id="panel-stats" role="tabpanel" aria-labelledby="tab-stats" class="h-full overflow-y-auto">
+        <div class="mx-auto max-w-7xl space-y-5 px-4 py-5">
+            <div id="stats-locked" class="card hidden text-sm">Statistics require sign-in — open the <b>Live</b> tab to sign in.</div>
+
+            <div class="flex flex-wrap items-center gap-3">
+                <fieldset class="inline-flex overflow-hidden rounded-lg border border-slate-300 dark:border-slate-700">
+                    <legend class="sr-only">Period</legend>
+                    <button class="seg" data-range="day" aria-pressed="true">Day</button>
+                    <button class="seg" data-range="week" aria-pressed="false">Week</button>
+                    <button class="seg" data-range="month" aria-pressed="false">Month</button>
+                    <button class="seg" data-range="year" aria-pressed="false">Year</button>
+                </fieldset>
+                <span id="range-label" class="text-sm text-slate-500 dark:text-slate-400"></span>
+            </div>
+
+            <div id="kpis" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"></div>
+
+            <div class="card">
+                <h2 class="card-title">Messages</h2>
+                <div id="chart-messages" class="relative min-h-72"></div>
+            </div>
+            <div class="card">
+                <h2 class="card-title">Buffer (messages waiting)</h2>
+                <div id="chart-buffer" class="relative min-h-40"></div>
+            </div>
+
+            <div class="card">
+                <h2 class="card-title">Interruptions — times without forwarding</h2>
+                <div id="interruptions" class="text-sm"></div>
+            </div>
+
+            <div class="card">
+                <div class="mb-3 flex flex-wrap items-center gap-3">
+                    <h2 class="card-title mb-0">Zigbee devices</h2>
+                    <span id="device-summary" class="text-xs text-slate-500 dark:text-slate-400"></span>
+                </div>
+                <div id="devices" class="overflow-x-auto text-sm"></div>
+            </div>
+
+            <div id="filters-card" class="card hidden">
+                <h2 class="card-title">Filters and routes</h2>
+                <div id="filters" class="text-sm"></div>
+            </div>
+
+            <p class="pb-2 text-center text-xs text-slate-400">Charts: MLTimeGraph © Michael Lechner</p>
+        </div>
+    </section>
+
+    <!-- Live -->
+    <section id="panel-live" role="tabpanel" aria-labelledby="tab-live" class="hidden h-full">
+        <div id="login" class="mx-auto mt-10 hidden max-w-sm px-4">
+            <form id="login-form" class="card space-y-3">
+                <h2 class="font-semibold">Sign in for the live view</h2>
+                <p class="text-sm text-slate-500 dark:text-slate-400">The live view shows every MQTT message. Statistics stay public.</p>
+                <label for="login-password" class="sr-only">Password</label>
+                <input id="login-password" type="password" autocomplete="current-password" placeholder="Password" required
+                       class="w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 dark:border-slate-700">
+                <p id="login-error" class="hidden text-sm text-rose-600"></p>
+                <button class="btn-primary w-full" type="submit">Sign in</button>
+            </form>
+        </div>
+        <div id="live-local-only" class="mx-auto mt-10 hidden max-w-md px-4">
+            <div class="card text-sm">The live view is available on the device itself only: no <code>server.password</code> is set.</div>
+        </div>
+        <div id="live" class="mx-auto hidden h-full max-w-7xl flex-col px-4 py-4">
+            <div class="mb-3 flex items-center gap-3">
+                <h2 class="font-semibold">Live MQTT traffic</h2>
+                <span id="conn-badge" class="pill bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">Connecting…</span>
+                <button id="clear-tree-btn" class="btn ml-auto">Clear</button>
+            </div>
+            <div class="card min-h-0 flex-1 overflow-auto">
+                <div id="tree-container" class="font-mono text-xs">
+                    <div class="py-10 text-center text-slate-400">Waiting for MQTT messages…</div>
                 </div>
             </div>
         </div>
-        <div class="col-md-6">
-            <div class="glass-card p-4 rounded-4 h-100">
-                <h6 class="text-uppercase text-muted fw-bold mb-3 small">Buffer Status</h6>
-                <div class="d-flex align-items-center">
-                    <div class="icon-circle bg-success bg-opacity-10 text-success me-3">
-                        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path></svg>
-                    </div>
-                    <div>
-                        <h4 class="mb-0 fw-bold" id="buffer-display">0</h4>
-                        <small class="text-muted">Messages in queue</small>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+    </section>
+</main>
 
-    <!-- Metrics Grid -->
-    <h5 class="fw-bold mb-3 px-2">Metrics</h5>
-    <div class="row g-4 mb-5">
-        <div class="col-6 col-md-3">
-            <div class="metric-card glass-card p-3 rounded-4 text-center">
-                <div class="text-muted small text-uppercase fw-bold mb-2">Received</div>
-                <h3 class="fw-bold text-info mb-0" id="metric-received">0</h3>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="metric-card glass-card p-3 rounded-4 text-center">
-                <div class="text-muted small text-uppercase fw-bold mb-2">Stored</div>
-                <h3 class="fw-bold text-primary mb-0" id="metric-stored">0</h3>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="metric-card glass-card p-3 rounded-4 text-center">
-                <div class="text-muted small text-uppercase fw-bold mb-2">Forwarded</div>
-                <h3 class="fw-bold text-success mb-0" id="metric-forwarded">0</h3>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="metric-card glass-card p-3 rounded-4 text-center">
-                <div class="text-muted small text-uppercase fw-bold mb-2">Failed</div>
-                <h3 class="fw-bold text-danger mb-0" id="metric-failed">0</h3>
-            </div>
-        </div>
-    </div>
-
-    <!-- Live Tree -->
-    <h5 class="fw-bold mb-3 px-2 d-flex justify-content-between align-items-center">
-        <span>Live MQTT Traffic</span>
-        <button id="clear-tree-btn" class="btn btn-sm btn-outline-secondary rounded-pill px-3">Clear</button>
-    </h5>
-    <div class="glass-card p-4 rounded-4" style="min-height: 300px;">
-        <div id="tree-container" class="font-monospace small">
-            <div class="text-muted text-center py-5">Waiting for MQTT messages...</div>
-        </div>
-    </div>
-</div>
-
-<!-- Lokales Bootstrap JS & App Logik -->
-<script src="/assets/bootstrap.bundle.min.js"></script>
-<script src="/assets/app.js"></script>
+<script type="module" src="/assets/js/app.js"></script>
 </body>
 </html>

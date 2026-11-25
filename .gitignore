@@ -20,3 +20,6 @@ config.yaml
 
 # semgrep-Bericht (Build-Artefakt)
 reports/
+
+# Task-Cache (sources/generates) und heruntergeladene Werkzeuge (task web:tools)
+/.task/

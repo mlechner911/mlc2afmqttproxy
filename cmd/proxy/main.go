@@ -205,6 +205,7 @@ func run() int {
 			Username:       cfg.MQTT.Username,
 			Password:       cfg.MQTT.Password,
 			Version:        Version,
+			Readings:       heartbeatReadings(db, fwd, fwWorker, mochiBroker),
 			MaxPause:       time.Duration(cfg.Monitor.MaxPauseMinutes) * time.Minute,
 			OnStop:         triggerShutdown,
 			OnRestart:      triggerRestart,

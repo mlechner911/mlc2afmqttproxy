@@ -1,6 +1,9 @@
 package metrics
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+	"time"
+)
 
 // Stats fasst alle Laufzeit-Metriken zusammen.
 type Stats struct {
@@ -37,6 +40,7 @@ func IncDroppedFull() { atomic.AddUint64(&messagesDroppedFull, 1) }
 // IncReceived erhöht den Zähler für lokal empfangene Pakete.
 func IncReceived() {
 	atomic.AddUint64(&messagesReceived, 1)
+	lastRecv.Store(time.Now().UnixNano())
 }
 
 // IncStored erhöht den Zähler für erfolgreich in BadgerDB gespeicherte Pakete.

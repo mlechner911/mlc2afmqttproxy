@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -78,6 +79,44 @@ func TestHeartbeat(t *testing.T) {
 	}
 	if _, ok := vals["svc_uptime_s"]; !ok {
 		t.Fatal("svc_uptime_s fehlt")
+	}
+	if _, ok := body["meta"]; ok && body["meta"].(map[string]any)["version"] != "" {
+		t.Fatalf("meta.version = %v; ohne Version leer", body["meta"])
+	}
+}
+
+// TestHeartbeatReadings (T-AFMQ-20261125-01): Pufferstand, Verbindungen und Zähler gehen im
+// selben Heartbeat mit, die Version als meta.version; Grundwerte lassen sich nicht überschreiben.
+func TestHeartbeatReadings(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		b, _ := io.ReadAll(req.Body)
+		_ = json.Unmarshal(b, &body)
+	}))
+	defer srv.Close()
+
+	r := New(Options{Device: "svc-edgeproxy", IngestURL: srv.URL, Token: "t", Version: "1.2.0",
+		Readings: func() map[string]float64 {
+			return map[string]float64{"buffer_pending": 42, "upstream_connected": 0, "service_up": 7}
+		}})
+	r.sendHeartbeat()
+
+	vals := map[string]float64{}
+	var keys []string
+	for _, ri := range body["readings"].([]any) {
+		m := ri.(map[string]any)
+		keys = append(keys, m["key"].(string))
+		vals[m["key"].(string)] = m["value"].(float64)
+	}
+	want := []string{"service_up", "service_state", "svc_uptime_s", "buffer_pending", "upstream_connected"}
+	if strings.Join(keys, ",") != strings.Join(want, ",") {
+		t.Fatalf("Schlüssel = %v; want %v", keys, want)
+	}
+	if vals["buffer_pending"] != 42 || vals["service_up"] != 1 {
+		t.Fatalf("Werte = %v", vals)
+	}
+	if v := body["meta"].(map[string]any)["version"]; v != "1.2.0" {
+		t.Fatalf("meta.version = %v; want 1.2.0", v)
 	}
 }
 

@@ -16,6 +16,7 @@
 package svcmon
 
 import (
+	"sort"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -50,7 +51,10 @@ type Options struct {
 	Broker         string        // Upstream-MQTT (tcp://host:port) für die Steuerung
 	Username       string        // Upstream-MQTT-Benutzer (= Proxy-Upstream-Creds)
 	Password       string        // Upstream-MQTT-Passwort / Token
-	Version        string        // Proxy-Version (nur fürs Log)
+	Version        string        // Proxy-Version (Log und Heartbeat-Feld meta.version)
+	// Readings liefert zusätzliche Zahlen für den Heartbeat (Puffer, Verbindungen, Zähler);
+	// nil = nur service_up/service_state/svc_uptime_s. Muss schnell sein und darf nicht blockieren.
+	Readings func() map[string]float64
 	MaxPause       time.Duration // Höchstdauer von „pause"/„drain" (Default 60 min), danach läuft der Versand wieder
 	OnStop         func()        // „stop"  → Proxy geordnet beenden
 	OnRestart      func()        // „restart" → Proxy beenden (Supervisor startet neu)
@@ -138,12 +142,9 @@ func (r *Reporter) heartbeatLoop(ctx context.Context) {
 
 func (r *Reporter) sendHeartbeat() {
 	body, _ := json.Marshal(map[string]any{
-		"device": r.o.Device,
-		"readings": []map[string]any{
-			{"key": "service_up", "value": 1},
-			{"key": "service_state", "value": r.state.Load()},
-			{"key": "svc_uptime_s", "value": int(time.Since(r.start).Seconds())},
-		},
+		"device":   r.o.Device,
+		"readings": r.readings(),
+		"meta":     map[string]string{"version": r.o.Version},
 	})
 	req, err := http.NewRequest(http.MethodPost, r.o.IngestURL, bytes.NewReader(body))
 	if err != nil {
@@ -160,6 +161,31 @@ func (r *Reporter) sendHeartbeat() {
 	if resp.StatusCode >= 300 {
 		log.Printf("[svcmon] Heartbeat abgelehnt: HTTP %d", resp.StatusCode)
 	}
+}
+
+// readings: Grundwerte, dann die zusätzlichen aus Options.Readings in fester Reihenfolge
+// (Schlüssel sortiert); ein Grundwert wird nicht überschrieben.
+func (r *Reporter) readings() []map[string]any {
+	out := []map[string]any{
+		{"key": "service_up", "value": 1},
+		{"key": "service_state", "value": r.state.Load()},
+		{"key": "svc_uptime_s", "value": int(time.Since(r.start).Seconds())},
+	}
+	if r.o.Readings == nil {
+		return out
+	}
+	extra := r.o.Readings()
+	keys := make([]string, 0, len(extra))
+	for k := range extra {
+		if k != "service_up" && k != "service_state" && k != "svc_uptime_s" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		out = append(out, map[string]any{"key": k, "value": extra[k]})
+	}
+	return out
 }
 
 // subscribeGranted: Hat der Broker das Abo angenommen? Rückgabecode ab 0x80 = abgelehnt. Ein Token

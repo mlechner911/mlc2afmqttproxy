@@ -3,6 +3,7 @@ package metrics
 import (
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Treffer je Filterregel seit dem Start. Schlüssel: „allow“ (Topic in keinem allowed_prefix)
@@ -11,7 +12,25 @@ var (
 	filterMu   sync.RWMutex
 	filterHits = map[string]*uint64{}
 	bufferFull atomic.Bool
+	pendingMB  atomic.Int64
+	lastRecv   atomic.Int64 // Unix-Nanosekunden der letzten empfangenen Nachricht, 0 = keine
 )
+
+// SetPendingMB merkt die zuletzt gemessene Größe des Puffers (MB); gemessen wird ohnehin alle
+// 10 s für das Tail-Drop-Limit — so braucht der Heartbeat keinen eigenen Scan.
+func SetPendingMB(mb int64) { pendingMB.Store(mb) }
+
+// PendingMB liefert die zuletzt gemessene Puffergröße in MB.
+func PendingMB() int64 { return pendingMB.Load() }
+
+// LastReceived liefert den Zeitpunkt der letzten lokal empfangenen Nachricht; Null = keine.
+func LastReceived() time.Time {
+	n := lastRecv.Load()
+	if n == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, n)
+}
 
 // IncFiltered zählt eine von der Filterregel rule verworfene Nachricht.
 func IncFiltered(rule string) {

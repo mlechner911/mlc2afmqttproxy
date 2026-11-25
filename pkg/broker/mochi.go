@@ -253,6 +253,7 @@ func StartLocalBroker(bind string, users []config.LocalUser, port int, wsPort in
 			// BadgerDB-Dateigröße (die durch Value-Log-Churn der Realität nachhinkt und
 			// fälschlich Tail-Drop auslöst, obwohl real fast nichts gepuffert ist).
 			sizeMB := store.GetPendingSizeMB()
+			metrics.SetPendingMB(sizeMB)
 			if sizeMB >= int64(maxDbSizeMB) {
 				if !hook.diskFull.Load() {
 					log.Printf("WARNUNG: Puffer-Limit erreicht (%d MB gepuffert / %d MB). Gehe in Read-Only Tail-Drop Modus!", sizeMB, maxDbSizeMB)
@@ -272,7 +273,7 @@ func StartLocalBroker(bind string, users []config.LocalUser, port int, wsPort in
 	// Lokaler TCP Listener einrichten
 	address := net.JoinHostPort(bind, strconv.Itoa(port))
 	err := server.AddListener(listeners.NewTCP(listeners.Config{
-		ID:      "tcp-local",
+		ID:      tcpListenerID,
 		Address: address,
 	}))
 	if err != nil {

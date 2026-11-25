@@ -103,6 +103,7 @@ func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packe
 		}
 		if !allowed {
 			// Topic nicht in der Whitelist -> Verwerfen (nicht speichern)
+			metrics.IncFiltered("allow")
 			return pk, nil
 		}
 	}
@@ -112,6 +113,7 @@ func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packe
 		for _, prefix := range h.filter.IgnoredPrefixes {
 			if strings.HasPrefix(topic, prefix) {
 				// Topic in der Blacklist -> Verwerfen (nicht speichern)
+				metrics.IncFiltered("ignore:" + prefix)
 				return pk, nil
 			}
 		}
@@ -255,11 +257,13 @@ func StartLocalBroker(bind string, users []config.LocalUser, port int, wsPort in
 				if !hook.diskFull.Load() {
 					log.Printf("WARNUNG: Puffer-Limit erreicht (%d MB gepuffert / %d MB). Gehe in Read-Only Tail-Drop Modus!", sizeMB, maxDbSizeMB)
 					hook.diskFull.Store(true)
+					metrics.SetBufferFull(true)
 				}
 			} else {
 				if hook.diskFull.Load() {
 					log.Printf("INFO: Puffer wieder unter Limit (%d MB gepuffert / %d MB). Tail-Drop beendet.", sizeMB, maxDbSizeMB)
 					hook.diskFull.Store(false)
+					metrics.SetBufferFull(false)
 				}
 			}
 		}

@@ -32,6 +32,13 @@ type Forwarder interface {
 	SetDownstreamHandler(handler DownstreamHandler)
 }
 
+// LinkReporter meldet den tatsächlichen Zustand der Verbindung zum Upstream. IsConnected
+// heißt bei den MQTT-Forwardern nur „Verbindungsmanager angelegt“ (der Worker ruft sonst erneut
+// Connect auf); Online ist die echte Verbindung, gesetzt aus OnConnectionUp/-Down.
+type LinkReporter interface {
+	Online() bool
+}
+
 // DownstreamHandler ist die Signatur für den Empfang von Nachrichten vom Upstream-Broker.
 type DownstreamHandler func(topic string, payload []byte)
 

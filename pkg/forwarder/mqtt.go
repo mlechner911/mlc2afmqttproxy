@@ -1,6 +1,7 @@
 package forwarder
 
 import (
+	"sync/atomic"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -34,6 +35,8 @@ type MQTTForwarder struct {
 
 	// connManager verwaltet die automatische Verbindung (Reconnects etc.)
 	connManager *autopaho.ConnectionManager
+	// online: Verbindung zum Upstream steht (OnConnectionUp bis OnConnectionDown).
+	online atomic.Bool
 
 	// username und password für Connect()
 	username string
@@ -78,6 +81,7 @@ func (f *MQTTForwarder) Connect() error {
 		CleanStartOnInitialConnection: false,
 		SessionExpiryInterval:         0xFFFFFFFF,
 		OnConnectionUp: func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
+			f.online.Store(true)
 			log.Printf("[MQTT-Upstream] Erfolgreich verbunden mit %s (MQTT 5)", f.Upstream)
 
 			// Downstream Publish-Handler registrieren (einmalig)
@@ -105,7 +109,13 @@ func (f *MQTTForwarder) Connect() error {
 				f.downSubscribed = true
 			}
 		},
+		OnConnectionDown: func() bool {
+			f.online.Store(false)
+			log.Printf("[MQTT-Upstream] Verbindung zu %s verloren", f.Upstream)
+			return true // weiter versuchen
+		},
 		OnConnectError: func(err error) {
+			f.online.Store(false)
 			log.Printf("[MQTT-Upstream] Verbindungsfehler: %v", err)
 		},
 		ClientConfig: paho.ClientConfig{
@@ -140,6 +150,9 @@ func (f *MQTTForwarder) IsConnected() bool {
 	}
 	return true
 }
+
+// Online meldet, ob die Verbindung zum Upstream gerade steht (LinkReporter).
+func (f *MQTTForwarder) Online() bool { return f.online.Load() }
 
 // Send führt optional Topic-Umschreibungen aus, verarbeitet den Zeitstempel
 // und sendet die Nachricht mit QoS 1 an den Upstream-Broker.

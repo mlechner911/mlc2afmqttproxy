@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -32,6 +33,11 @@ type Worker struct {
 	// Fehlerverfolgung für Exponential Backoff
 	consecutiveFailures int
 	nextAttempt         time.Time
+
+	// Für Statistik und Heartbeat, von anderen Goroutinen gelesen: schlägt das Senden gerade
+	// fehl, und wann ging zuletzt eine Nachricht erfolgreich hinaus (Unix-Nanosekunden, 0 = nie).
+	failing     atomic.Bool
+	lastForward atomic.Int64
 
 	// pauseCheck (optional) lässt das Upstream-Senden ruhen, solange es true liefert
 	// (Fernsteuerung „pause"/„drain"). Eingehende Nachrichten werden weiter im
@@ -252,6 +258,7 @@ func (w *Worker) processNext() (bool, error) {
 // handleFailure berechnet den Exponential Backoff und sperrt den Worker temporär für weitere Versuche.
 func (w *Worker) handleFailure() {
 	w.consecutiveFailures++
+	w.failing.Store(true)
 	tempFailures := w.consecutiveFailures
 	if tempFailures > 10 {
 		tempFailures = 10 // Capping bei 2^10, um Overflow zu vermeiden
@@ -271,4 +278,18 @@ func (w *Worker) handleFailure() {
 func (w *Worker) handleSuccess() {
 	w.consecutiveFailures = 0
 	w.nextAttempt = time.Time{}
+	w.failing.Store(false)
+	w.lastForward.Store(time.Now().UnixNano())
+}
+
+// Failing meldet, ob der letzte Sende- oder Verbindungsversuch fehlschlug (bis zum nächsten Erfolg).
+func (w *Worker) Failing() bool { return w.failing.Load() }
+
+// LastForward liefert den Zeitpunkt der letzten erfolgreichen Weiterleitung; Null = noch keine.
+func (w *Worker) LastForward() time.Time {
+	n := w.lastForward.Load()
+	if n == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, n)
 }

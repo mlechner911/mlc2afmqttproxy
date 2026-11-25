@@ -15,6 +15,7 @@ import (
 	"io/fs"
 
 	"github.com/gin-gonic/gin"
+	"mlc2afmqttproxy/pkg/history"
 	"mlc2afmqttproxy/pkg/metrics"
 	"mlc2afmqttproxy/pkg/storage"
 	"mlc2afmqttproxy/pkg/config"
@@ -104,7 +105,8 @@ var staticFS embed.FS
 // Registriert Middleware für statische Dateien, leitet WebSocket-Verbindungen
 // an den lokalen Mochi-MQTT Broker weiter und registriert die JSON-APIs.
 // Startet den Server in einer Goroutine und gibt das *http.Server Objekt für Graceful Shutdown zurück.
-func StartServer(cfg *config.Config, store *storage.Store, version string, startTime time.Time) *http.Server {
+// hist darf nil sein (dann ohne Verlaufs-API).
+func StartServer(cfg *config.Config, store *storage.Store, hist *history.Store, version string, startTime time.Time) *http.Server {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
@@ -176,6 +178,10 @@ func StartServer(cfg *config.Config, store *storage.Store, version string, start
 	// APIs registrieren
 	r.GET(cfg.Server.APIPrefix+"/stats", GetStatsHandler(store))
 	r.GET(cfg.Server.APIPrefix+"/health", GetHealthHandler(version))
+	if hist != nil {
+		r.GET(cfg.Server.APIPrefix+"/history", GetHistoryHandler(hist))
+		r.GET(cfg.Server.APIPrefix+"/history/detail", GetHistoryDetailHandler(hist))
+	}
 
 	address := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	srv := &http.Server{

@@ -1,6 +1,7 @@
 package forwarder
 
 import (
+	"sync/atomic"
 	"context"
 	"fmt"
 	"log"
@@ -29,6 +30,8 @@ type MQTT5Forwarder struct {
 	Rewrite *config.TopicRewriteConf
 	// client ist der Autopaho Connection Manager für automatische Verbindungsaufrechterhaltung
 	client *autopaho.ConnectionManager
+	// online: Verbindung zum Upstream steht (OnConnectionUp bis OnConnectionDown).
+	online atomic.Bool
 	// ctx ist der Kontext für asynchrone Client-Prozesse
 	ctx context.Context
 	// cancel bricht den asynchronen Client-Prozess bei Schließen ab
@@ -74,9 +77,15 @@ func (f *MQTT5Forwarder) connectClient() error {
 	cliCfg := autopaho.ClientConfig{
 		BrokerUrls: []*url.URL{u},
 		KeepAlive:  30,
+		OnConnectionDown: func() bool {
+			f.online.Store(false)
+			log.Printf("[MQTT5-Upstream] Verbindung zu %s verloren", f.Upstream)
+			return true // weiter versuchen
+		},
 		OnConnectError: func(err error) {
+			f.online.Store(false)
 			log.Printf("[MQTT5-Upstream] Verbindung fehlgeschlagen: %v", err)
-			},
+		},
 		ClientConfig: paho.ClientConfig{
 			ClientID: f.clientIDOr("mlc2af-proxy-forwarder-v5"),
 			},
@@ -94,6 +103,7 @@ func (f *MQTT5Forwarder) connectClient() error {
 	}
 
 	cliCfg.OnConnectionUp = func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
+		f.online.Store(true)
 		log.Printf("[MQTT5-Upstream] Erfolgreich verbunden mit %s", f.Upstream)
 		if taHandler != nil {
 			taHandler.ResetAll() // Wichtig für Server-Restarts, damit die Aliases beim neuen Connect neu verhandelt werden!
@@ -142,6 +152,9 @@ func (f *MQTT5Forwarder) Connect() error {
 	}
 	return f.connectClient()
 }
+
+// Online meldet, ob die Verbindung zum Upstream gerade steht (LinkReporter).
+func (f *MQTT5Forwarder) Online() bool { return f.online.Load() }
 
 // IsConnected prüft, ob der Connection Manager initialisiert ist.
 func (f *MQTT5Forwarder) IsConnected() bool {

@@ -12,14 +12,14 @@ tasks:
     desc: "Baut das Go-Backend in den bin/ Ordner"
     cmds:
       - mkdir -p bin
-      - go build -ldflags="{{.LDFLAGS}}" -o bin/mlc-edge-proxy cmd/proxy/main.go
+      - go build -ldflags="{{.LDFLAGS}}" -o bin/mlc-edge-proxy ./cmd/proxy
 
 
   build-bridge:
     desc: "Baut das MQTT Bridge CLI-Tool in den bin/ Ordner"
     cmds:
       - mkdir -p bin
-      - go build -ldflags="{{.LDFLAGS}}" -o bin/mqttbridge cmd/mqttbridge/main.go
+      - go build -ldflags="{{.LDFLAGS}}" -o bin/mqttbridge ./cmd/mqttbridge
 
   build:
     desc: "Baut Server und Bridge"

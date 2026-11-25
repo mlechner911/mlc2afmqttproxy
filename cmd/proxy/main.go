@@ -135,11 +135,15 @@ func run() int {
 	fwWorker.SetDeadLetter(filepath.Join(cfg.Storage.Path, "dead-letter.jsonl"))
 	defer fwWorker.Stop()
 
+	// 5b. Verlaufsstatistik (Tage, 10-Minuten-Abschnitte, Unterbrechungen); läuft ab Schritt 9.
+	hist := openHistory(cfg)
+	paused := func() bool { return false }
+
 	// 6. Diagnose-Webserver und Live-Dashboard auf dem konfigurierten Port starten
 	var srv *http.Server
 	if cfg.Server.Enable {
 		log.Printf("Webserver lauscht auf Port %d mit API-Präfix '%s'", cfg.Server.Port, cfg.Server.APIPrefix)
-		srv = web.StartServer(cfg, db, Version, startTime)
+		srv = web.StartServer(cfg, db, hist, Version, startTime)
 	} else {
 		log.Println("Diagnose-Webserver ist deaktiviert (server.enable = false).")
 	}
@@ -207,6 +211,7 @@ func run() int {
 		})
 		// „pause"/„drain" lassen den Upstream-Versand ruhen (Daten bleiben gepuffert).
 		fwWorker.SetPauseCheck(reporter.Paused)
+		paused = reporter.Paused
 		for _, rw := range routeWorkers {
 			rw.SetPauseCheck(reporter.Paused)
 		}
@@ -221,6 +226,7 @@ func run() int {
 		rw.Start()
 		defer rw.Stop()
 	}
+	stopHistory := startHistory(hist, sampler(db, fwd, fwWorker, &paused))
 
 	sig := <-quit
 	log.Printf("Signal %v empfangen. Beende Proxy geordnet (Graceful Shutdown)...", sig)
@@ -238,6 +244,7 @@ func run() int {
 
 	log.Println("Stoppe Mochi MQTT Broker...")
 	_ = mochiBroker.Close()
+	stopHistory() // letzter Stand des Verlaufs auf die Platte
 
 	log.Println("Datenbank und Worker werden sauber geschlossen...")
 	// defer db.Close() und defer fwWorker.Stop() laufen beim Verlassen von run().

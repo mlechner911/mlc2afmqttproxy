@@ -13,6 +13,8 @@ type Stats struct {
 	MessagesDeadLettered uint64 `json:"messages_dead_lettered_total"`
 	// Bei vollem Puffer nicht angenommen (Tail-Drop) — diese Werte fehlen im Nachweis.
 	MessagesDroppedFull uint64 `json:"messages_dropped_buffer_full_total"`
+	// Von den Topic-Filtern (allowed_prefixes / ignored_prefixes) verworfen. Bis 25.11.2026 nicht gezählt.
+	MessagesFiltered uint64 `json:"messages_filtered_total"`
 }
 
 var (
@@ -23,6 +25,7 @@ var (
 	messagesDeduplicated  uint64
 	messagesDeadLettered  uint64
 	messagesDroppedFull   uint64
+	messagesFiltered      uint64
 )
 
 // IncDeadLettered zählt eine endgültig abgelehnte, in der Dead-Letter-Datei abgelegte Nachricht.
@@ -66,5 +69,6 @@ func GetStats() Stats {
 		MessagesDeduplicated:  atomic.LoadUint64(&messagesDeduplicated),
 		MessagesDeadLettered:  atomic.LoadUint64(&messagesDeadLettered),
 		MessagesDroppedFull:   atomic.LoadUint64(&messagesDroppedFull),
+		MessagesFiltered:      atomic.LoadUint64(&messagesFiltered),
 	}
 }

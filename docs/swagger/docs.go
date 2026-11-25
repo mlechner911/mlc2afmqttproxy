@@ -35,6 +35,86 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/history": {
+            "get": {
+                "description": "Tageswerte der letzten ` + "`" + `days` + "`" + ` Tage, Summen für 1/7/30/365 Tage und die Unterbrechungen der Weiterleitung.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "History"
+                ],
+                "summary": "Verlauf (Tageswerte und Zeiträume)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Tage (1–400, Standard 30)",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.HistoryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/history/detail": {
+            "get": {
+                "description": "Abschnitte und Zustandsintervalle in [from, to). Standard: die letzten 24 Stunden; höchstens 31 Tage.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "History"
+                ],
+                "summary": "Verlauf im Detail (10-Minuten-Abschnitte)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Beginn (RFC3339)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ende (RFC3339)",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.HistoryDetailResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/stats": {
             "get": {
                 "description": "Gibt die Anzahl der aktuell in BadgerDB zwischengespeicherten Nachrichten zurück.",
@@ -57,6 +137,146 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "history.Day": {
+            "type": "object",
+            "properties": {
+                "buffer_max": {
+                    "description": "BufferMax ist der höchste gemessene Pufferstand des Tages (Nachrichten).",
+                    "type": "integer"
+                },
+                "date": {
+                    "type": "string",
+                    "example": "2026-11-25"
+                },
+                "dead_lettered": {
+                    "type": "integer"
+                },
+                "deduplicated": {
+                    "type": "integer"
+                },
+                "dropped_buffer_full": {
+                    "type": "integer"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "filtered": {
+                    "type": "integer"
+                },
+                "forwarded": {
+                    "type": "integer"
+                },
+                "received": {
+                    "type": "integer"
+                },
+                "stored": {
+                    "type": "integer"
+                }
+            }
+        },
+        "history.Period": {
+            "type": "object",
+            "properties": {
+                "buffer_max": {
+                    "type": "integer"
+                },
+                "days": {
+                    "type": "integer",
+                    "example": 7
+                },
+                "dead_lettered": {
+                    "type": "integer"
+                },
+                "deduplicated": {
+                    "type": "integer"
+                },
+                "dropped_buffer_full": {
+                    "type": "integer"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "filtered": {
+                    "type": "integer"
+                },
+                "forwarded": {
+                    "type": "integer"
+                },
+                "from": {
+                    "type": "string",
+                    "example": "2026-11-19"
+                },
+                "received": {
+                    "type": "integer"
+                },
+                "seconds": {
+                    "description": "Seconds je Zustand (State*) im Zeitraum; Zeit ohne Messung fehlt.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                },
+                "stored": {
+                    "type": "integer"
+                }
+            }
+        },
+        "history.Slot": {
+            "type": "object",
+            "properties": {
+                "buffer_max": {
+                    "description": "BufferMax ist der höchste gemessene Pufferstand im Abschnitt.",
+                    "type": "integer"
+                },
+                "dead_lettered": {
+                    "type": "integer"
+                },
+                "deduplicated": {
+                    "type": "integer"
+                },
+                "dropped_buffer_full": {
+                    "type": "integer"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "filtered": {
+                    "type": "integer"
+                },
+                "forwarded": {
+                    "type": "integer"
+                },
+                "received": {
+                    "type": "integer"
+                },
+                "start": {
+                    "type": "string"
+                },
+                "stored": {
+                    "type": "integer"
+                }
+            }
+        },
+        "history.Span": {
+            "type": "object",
+            "properties": {
+                "end": {
+                    "type": "string"
+                },
+                "open": {
+                    "description": "Open: Der Zeitraum dauert noch an (End ist die letzte Messung).",
+                    "type": "boolean"
+                },
+                "start": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string",
+                    "example": "upstream_down"
+                }
+            }
+        },
         "web.HealthResponse": {
             "type": "object",
             "properties": {
@@ -70,11 +290,81 @@ const docTemplate = `{
                 }
             }
         },
+        "web.HistoryDetailResponse": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "string"
+                },
+                "slot_seconds": {
+                    "type": "integer",
+                    "example": 600
+                },
+                "slots": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/history.Slot"
+                    }
+                },
+                "spans": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/history.Span"
+                    }
+                },
+                "to": {
+                    "type": "string"
+                }
+            }
+        },
+        "web.HistoryResponse": {
+            "type": "object",
+            "properties": {
+                "daily": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/history.Day"
+                    }
+                },
+                "days": {
+                    "type": "integer",
+                    "example": 30
+                },
+                "interruptions": {
+                    "description": "Interruptions sind die Zeiträume ohne Weiterleitung im Fenster, neueste zuerst (max. 200).",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/history.Span"
+                    }
+                },
+                "periods": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/history.Period"
+                    }
+                }
+            }
+        },
         "web.StatsResponse": {
             "type": "object",
             "properties": {
                 "buffer_count": {
                     "description": "Die aktuelle Anzahl der in BadgerDB zwischengespeicherten Nachrichten.",
+                    "type": "integer"
+                },
+                "messages_dead_lettered_total": {
+                    "description": "Endgültig abgelehnt und in der Dead-Letter-Datei abgelegt (nicht weitergeleitet).",
+                    "type": "integer"
+                },
+                "messages_deduplicated_total": {
+                    "type": "integer"
+                },
+                "messages_dropped_buffer_full_total": {
+                    "description": "Bei vollem Puffer nicht angenommen (Tail-Drop) — diese Werte fehlen im Nachweis.",
+                    "type": "integer"
+                },
+                "messages_filtered_total": {
+                    "description": "Von den Topic-Filtern (allowed_prefixes / ignored_prefixes) verworfen. Bis 25.11.2026 nicht gezählt.",
                     "type": "integer"
                 },
                 "messages_forward_failed_total": {

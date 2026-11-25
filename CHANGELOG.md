@@ -2,7 +2,7 @@
 
 One line per change. Background, measurements and ticket references: release notes in the project's Doc Hub (`releases/<version>.md`).
 
-## [Unreleased]
+## [1.3.0] - 2026-11-25
 
 ### Changed
 - Web UI: interruptions and filters have their own tabs; interruptions show a summary per reason and the longest one.

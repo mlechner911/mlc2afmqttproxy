@@ -5,6 +5,12 @@ on:
     tags:
       - 'v*'
 
+# Das Release anzulegen braucht Schreibrecht auf contents; das Standard-Token des Repos darf nur
+# lesen (so soll es bleiben: Rechte gezielt je Workflow). Bis 25.11.2026 fehlte das — v1.2.0
+# scheiterte mit 403, das Release wurde von Hand nachgezogen.
+permissions:
+  contents: write
+
 jobs:
   release:
     name: Build and Release Packages

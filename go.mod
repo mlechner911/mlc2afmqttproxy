@@ -6,8 +6,8 @@ toolchain go1.26.11
 
 require (
 	github.com/dgraph-io/badger/v4 v4.9.6
-	github.com/eclipse/paho.golang v0.23.0
-	github.com/eclipse/paho.mqtt.golang v1.5.1
+	github.com/eclipse/paho.golang v0.24.0
+	github.com/eclipse/paho.mqtt.golang v1.5.2
 	github.com/gin-gonic/gin v1.12.0
 	github.com/mochi-mqtt/server/v2 v2.7.9
 	github.com/swaggo/swag v1.16.6
@@ -39,7 +39,7 @@ require (
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/google/flatbuffers v25.2.10+incompatible // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
+	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.20.2 // indirect

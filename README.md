@@ -36,7 +36,7 @@ Ob du IoT-Daten zentral in die Cloud funkst oder an ein lokales Smart-Home-Syste
 ### Kern-Features
 *   **Effizienz:** Nutzt eine eingebettete Datenbank für extrem schnelles, lokales Caching.
 *   **Ausfallsicherheit:** Der Proxy springt ein, wenn der Master-Broker offline ist.
-*   **Live Dashboard:** Integrierter, reaktiver MQTT Tree Explorer (Websocket-basiert, Svelte) auf Port `8097`.
+*   **Statistik & Live-Ansicht:** Web-Oberfläche auf Port `8097` — Verlauf je Tag/Woche/Monat/Jahr, Unterbrechungen der Weiterleitung, Statistik je Zigbee-Gerät (öffentlich, damit der Kunde sieht, ob alles läuft) und ein MQTT-Live-Baum hinter einem Passwort.
 *   **Mochi-MQTT Broker:** Eingebetteter, ressourcenschonender MQTT Broker für lokale Geräte.
 *   **Protokoll-Support:** Voller Support für MQTT v3.1.1, MQTT v4 und **MQTT v5**.
   * **Ausgehend (Upstream & Bridge)**: Verwendet je nach Konfiguration MQTT v3.1.1 oder nativ **MQTT v5**, um moderne Features wie User Properties nutzen zu können.
@@ -57,7 +57,7 @@ Ob du IoT-Daten zentral in die Cloud funkst oder an ein lokales Smart-Home-Syste
   * **Topic Rewrite:** Optional kann beim MQTT-Forwarding ein empfangener Topic-Präfix (`match_prefix`) durch einen anderen (`replace_with`) ersetzt werden (z.B. von `zigbee2mqtt/` auf `/v1/bridgedataxxx/`).
 * **Downstream Routing (Cloud → Lokal):** Nachrichten vom Upstream-Broker können an lokale MQTT-Clients weitergeleitet werden (z.B. zum Schalten von Aktoren von der Cloud). Loop-Detection via `origin`-Property verhindert Endlosschleifen. Siehe `mqtt.downstream_config` in der Konfiguration.
 * **Self-Monitoring & Fernsteuerung (optional, standardmäßig an):** Der Proxy meldet sich beim MLC Sensor Monitor als **Dienst** (`svc-edgeproxy`) per Heartbeat und ist von dort **fernsteuerbar** (pause/resume/restart/stop). Fällt der Proxy aus, erzeugt der Monitor automatisch ein Ereignis — der für Zigbee kritische Edge-Pfad ist damit lückenlos überwacht. Bewusst **lose gekoppelt** (kein Code-Import, reines HTTP+MQTT) und **abschaltbar** (`monitor.enabled: false`); der Proxy läuft auch ohne Monitor normal weiter. Details unten unter [Self-Monitoring](#self-monitoring--fernsteuerung).
-* **Health & Diagnostik**: Eingebautes Web-Dashboard (Port `8097`) zeigt den Live-Pufferstand und Status-Informationen an (`/api/v1/health` liefert die Version).
+* **Health & Diagnostik**: `/api/v1/status` (Zustand, Puffer, Verbindungen, Alter der letzten Weiterleitung), `/api/v1/history`, `/api/v1/devices`, `/api/v1/health` (Version). Spec: `docs/swagger/`.
 * **Ausfallsicher**: Out-of-the-Box Systemd-Deployment für Autostart nach Stromausfällen.
 * **Best Practice Setup**: Eine detaillierte Übersicht für das optimale, ausfallsichere Hardware-Setup findest du unter [Best Setup & Integration](file:///mnt/data2tb/mlc2afmqttproxy/docs/best_setup.md).
 
@@ -107,10 +107,25 @@ graph TD
 
 ```
 
-### 1. Das Live Dashboard (UI)
-Der Proxy bietet auf Port `8097` ein integriertes Web-Dashboard (Svelte). Es zeigt den Puffer-Status an und bietet einen reaktiven **Live MQTT Tree Explorer**.
+### 1. Die Oberfläche (Port `8097`)
+Zwei Tabs unter einer feststehenden Kopfzeile (Zustand der Weiterleitung, Puffer, letzte Weiterleitung,
+Zigbee-Verbindung, Laufzeit, Version):
 
-![Live MQTT Dashboard Screenshot](docs/dashboard.png)
+* **Statistics** (Standard, **ohne Anmeldung**): Zeitraum Tag/Woche/Monat/Jahr (auch per `?range=week`),
+  Kennzahlen, Nachrichten als Treppe mit Zustandsband (weitergeleitet · Upstream weg · pausiert ·
+  Puffer voll · Proxy lief nicht), Pufferstand, Liste der **Unterbrechungen**, Tabelle der
+  **Zigbee-Geräte** (Nachrichten, mittlerer Sendeabstand, zuletzt gesehen, Batterie, Linkqualität,
+  Status *OK/Silent/Offline/Not seen*; Klick zeigt den Verlauf des Geräts). Angemeldet zusätzlich:
+  die **Filter** mit ihren Treffern.
+* **Live** (**Passwort**, `server.password`): Baum der zuletzt gesehenen MQTT-Werte. Ohne Passwort
+  nur am Gerät selbst (Aufrufe von `127.0.0.1`).
+
+Was öffentlich ist, steuern `server.public_stats` und `server.public_devices` (beide Standard an).
+Die Werte liegen unter `<storage.path>/history/` (10-Minuten-Werte 31 Tage, Tageswerte 400 Tage).
+Gebaut mit Tailwind (Standalone-CLI, `task web:css`) und
+[MLTimeGraph](https://www.npmjs.com/package/ml-time-graph) (vendored, `task web:vendor`).
+
+![Statistik-Ansicht](docs/dashboard.png)
 
 ### 2. CLI-Tools
 Zusätzlich zum Proxy beinhaltet das Projekt nützliche Hilfsprogramme in `cmd/`.
@@ -137,7 +152,11 @@ mitüberwacht, ohne dass der Proxy von der Monitor-Software abhängt.
 **Zwei Kanäle (beide einzeln abschaltbar):**
 * **Heartbeat (raus):** alle `interval_s` Sekunden ein `POST` an den Ingest-Endpunkt
   (`monitor.ingest_url`, Default = `http.endpoint`) mit Header `X-Ingest-Token`. Payload:
-  `service_up=1`, `service_state` (1 läuft · 2 pausiert · 3 leert), `svc_uptime_s`. Der
+  `service_up=1`, `service_state` (1 läuft · 2 pausiert · 3 leert), `svc_uptime_s`, seit 1.2.0
+  außerdem `buffer_pending`, `buffer_pending_mb`, `upstream_connected`, `zigbee_connected`,
+  `last_forward_age_s`, `last_receive_age_s` (-1 = seit Start noch nie), `forward_failed_total`,
+  `dropped_full_total`, `dead_lettered_total` und `meta.version`. Ein Proxy kann „läuft“ melden
+  und trotzdem nichts weiterleiten — diese Werte zeigen es. Der
   Monitor legt daraus automatisch das Gerät `svc-edgeproxy` an. **Bleibt der Heartbeat
   aus, erzeugt der Monitor selbst ein „Keine-Daten"-Ereignis** — keine Down-Logik im Proxy nötig.
 * **Steuerung (rein):** der Proxy abonniert auf dem **ohnehin genutzten Upstream-Broker**

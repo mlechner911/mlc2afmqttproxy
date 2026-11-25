@@ -22,13 +22,19 @@ server:
   # (Optional) If false, the web dashboard is completely disabled (Default: true)
   enable: true
   # (Optional) The IP address the web server should bind to (Default: "0.0.0.0" for all interfaces).
-  # Without username/password it is always 127.0.0.1 — a dashboard without login is never reachable from outside.
+  # Without username/password and with public_stats: false it is 127.0.0.1.
   host: "0.0.0.0"
   # The port for the diagnostic web dashboard and the health API
   port: 8097
   # (Optional) Path prefix for the diagnostic REST API (Default: "/api/v1")
   api_prefix: "/api/v1"
-  # Basic auth for the entire web dashboard and API (required for access from outside)
+  # Public, no login (since 1.2.0, default on): statistics — /status, /stats, /history and, with
+  # public_devices, /devices. Customers see whether the proxy runs and forwards.
+  # public_stats: true
+  # public_devices: true
+  # Login for the protected part: live view (/mqtt, every MQTT message), /config, /filters. In the
+  # page (session cookie, 12 h) or via HTTP basic auth. Without a password the protected part answers
+  # requests from 127.0.0.1 only — behind a reverse proxy always set a password.
   # username: "admin"
   # password: "secret-password"
 
@@ -71,6 +77,8 @@ mqtt:
   deduplicate_ignore_keys:
     - last_seen
     - linkquality
+  # zigbee2mqtt base topic (z2m: mqtt.base_topic) for the device statistics (default: "zigbee2mqtt")
+  # zigbee_base_topic: "zigbee2mqtt"
   
   # Optional topic rewrite policy (e.g. redirect to a namespace)
   topic_rewrite:

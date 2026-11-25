@@ -65,8 +65,10 @@ The proxy authenticates the way the upstream requires. In general:
 | :-- | :-- |
 | Start, stop, restart | `sudo systemctl restart mlc-edge-proxy` (unit: `deployment/proxy.service` or `deploy/systemd/`) |
 | Running, which version? | `curl http://127.0.0.1:8097/api/v1/health` → `{"status":"ok","version":"…"}` |
-| Buffer and counters | `curl http://127.0.0.1:8097/api/v1/stats` → `buffer_count`, `messages_forwarded_total`, `messages_forward_failed_total` … |
-| Dashboard | `http://<host>:8097/` — buffer, live tree of MQTT topics |
+| Is it forwarding? | `curl http://127.0.0.1:8097/api/v1/status` → `state` (`ok`, `upstream_down`, `paused`, `buffer_full`), `buffer_pending`, `last_forward_age_s`, `zigbee_connected` |
+| Buffer and counters | `curl http://127.0.0.1:8097/api/v1/stats` → `buffer_count`, `messages_forwarded_total`, `messages_forward_failed_total`, `messages_filtered_total` … |
+| History | `http://<host>:8097/` — statistics per day/week/month/year, interruptions, Zigbee devices (no login); API `/api/v1/history`, `/api/v1/devices` |
+| Live tree of MQTT topics | **Live** tab — with `server.password`; without a password on the device itself only |
 | Log | `journalctl -u mlc-edge-proxy -f` |
 | Pause/resume forwarding | via the upstream (MLC Sensor Monitor: **Services** page), see there |
 
@@ -74,6 +76,13 @@ The proxy authenticates the way the upstream requires. In general:
 `messages_forward_failed_total` stays flat, forwarding is paused — otherwise the proxy cannot reach
 the upstream (network, credentials). If the buffer space is exhausted (`storage.max_size_mb`), the
 proxy accepts **no new** messages rather than filling the SD card ("tail drop").
+
+
+**History and devices** are stored under `<storage.path>/history/` (JSON; 10-minute values for 31
+days, daily values and interruptions for 400 days, `devices.json` with "last seen"). Sampled every
+15 s, written every minute and on shutdown. A broken file is moved aside as `.broken`; the proxy
+keeps running. A device counts as **silent** when it has not reported for three times its usual
+interval (last 7 days, at least 1 h).
 
 ## Backing up the configuration
 
@@ -115,11 +124,14 @@ cut) does.
   machine: set `mqtt.bind` to the box's address and an account in `mqtt.local_users` (in z2m
   `mqtt.user`/`mqtt.password`); without an account the proxy then refuses to start. Loopback
   connections still need no login.
-- **Dashboard** (`:8097`): without `server.username`/`server.password` only on `127.0.0.1`; with
-  a login on `server.host`. The live stream (`/mqtt`) is only available through the dashboard and
-  only from the same origin (protection against foreign web pages in the browser). The login is
-  HTTP basic auth — unencrypted over the LAN; outside a trusted network use an encrypted access
-  (VPN, SSH tunnel).
+- **Web UI** (`:8097`): since 1.2.0 the **statistics** are visible without login
+  (`server.public_stats`, `server.public_devices`; device names included) and listen on
+  `server.host`. **Protected** are the live view (`/mqtt`, every MQTT message), `/config` and
+  `/filters`: with `server.password` after signing in (page or basic auth), without a password for
+  requests from `127.0.0.1` only — **so behind a reverse proxy on the same box always set a
+  password**. The live stream is only served to the same origin (protection against foreign web
+  pages in the browser). The login is unencrypted over the LAN; outside a trusted network use an
+  encrypted access (VPN, SSH tunnel). Failed attempts are slowed to about one per second.
 - **An upstream broker in front** (e.g. mosquitto with `mqttbridge --bidi`) needs the same care:
   whatever reaches it reaches the proxy through the bridge.
 - **Encrypt the connection to the upstream** as soon as it leaves the premises (`ssl://`/`wss://`

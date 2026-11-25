@@ -2,6 +2,36 @@
 
 One line per change. Background, measurements and ticket references: release notes in the project's Doc Hub (`releases/<version>.md`).
 
+## [1.2.0] - 2026-11-25
+
+**Upgrade:** statistics are now public by default (`server.public_stats`, `server.public_devices`); the live view, `/config` and `/filters` need `server.password` or a request from `127.0.0.1`. Without a password the web server no longer falls back to `127.0.0.1` unless `public_stats: false`. Rebuild with `task build` — the Taskfile now builds packages instead of single `main.go` files.
+
+### Added
+- History per 10 minutes (31 days) and per day (400 days) under `<storage.path>/history/`.
+- Interruptions of forwarding recorded to the second: upstream down, paused, buffer full.
+- Statistics per Zigbee device: messages, usual interval, last seen, battery, link quality, silent detection.
+- New web UI with Statistics and Live tabs, sticky header, day/week/month/year charts.
+- Sign-in form with session cookie for the live view; basic auth keeps working.
+- API: `/status`, `/history`, `/history/detail`, `/devices`, `/devices/history`, `/filters`, `/login`, `/logout`.
+- Topic-filter drops are counted (`messages_filtered_total`, hits per rule).
+- Heartbeat sends buffer, upstream and Zigbee connection, last forward age and version.
+- Remote control listens in the customer's branch (`monitor.customer_number`).
+- Setting `mqtt.zigbee_base_topic` for the device statistics.
+
+### Changed
+- Styling with Tailwind (standalone CLI, `task web:css`); Bootstrap removed.
+- Charts with ml-time-graph 1.25.0, vendored with checksum (`task web:vendor`).
+
+### Fixed
+- The MQTT forwarders reported "connected" while the upstream was unreachable.
+- The live tree flickered, showed binary data from merged packets and printed arrays as `[object Object]`.
+- A rejected remote-control subscription (SUBACK 0x80) was reported as active.
+
+### Security
+- `json_inject` no longer lets a payload backdate the receive time.
+- Dependencies updated: Go 1.26.11, gorilla/websocket (GO-2026-6278), x/net, x/crypto, otel, badger, paho.
+- Failed sign-ins are slowed to about one per second.
+
 ## [1.1.0] - 2026-11-07
 
 **Upgrade:** the local broker now listens on `127.0.0.1` only. If zigbee2mqtt runs on another host, set `mqtt.bind` and an account in `mqtt.local_users` — otherwise the proxy refuses to start. Without `server.username`/`server.password` the dashboard is reachable on `127.0.0.1` only.

@@ -21,13 +21,19 @@ server:
   # (Optional) Wenn false, wird das Web-Dashboard komplett deaktiviert (Standard: true)
   enable: true
   # (Optional) Die IP-Adresse, an die der Webserver gebunden werden soll (Standard: "0.0.0.0" für alle Interfaces).
-  # Ohne username/password gilt immer 127.0.0.1 — ein Dashboard ohne Anmeldung ist nie von außen erreichbar.
+  # Ohne username/password und mit public_stats: false gilt 127.0.0.1.
   host: "0.0.0.0"
   # Der Port für das Diagnostik-Web-Dashboard und die Health-API
   port: 8097
   # (Optional) Pfad-Präfix für die Diagnose-REST-API (Standard: "/api/v1")
   api_prefix: "/api/v1"
-  # Basic Auth für das komplette Web-Dashboard und die API (Pflicht für Zugriff von außen)
+  # Öffentlich, ohne Anmeldung (seit 1.2.0, Standard an): Statistik — /status, /stats, /history und,
+  # mit public_devices, /devices. So sieht der Kunde, ob der Proxy läuft und weiterleitet.
+  # public_stats: true
+  # public_devices: true
+  # Anmeldung für den geschützten Teil: Live-Ansicht (/mqtt, alle MQTT-Inhalte), /config, /filters.
+  # In der Seite (Session-Cookie, 12 h) oder per HTTP Basic Auth. Ohne Passwort gibt es den
+  # geschützten Teil nur für Aufrufe von 127.0.0.1 — hinter einem Reverse Proxy immer ein Passwort setzen.
   # username: "admin"
   # password: "secret-password"
 
@@ -70,6 +76,8 @@ mqtt:
   deduplicate_ignore_keys:
     - last_seen
     - linkquality
+  # Basis-Topic von zigbee2mqtt (z2m: mqtt.base_topic) für die Gerätestatistik (Standard: "zigbee2mqtt")
+  # zigbee_base_topic: "zigbee2mqtt"
   
   # Optionale Rewrite-Policy für das Base-Topic (z.B. umleiten auf einen Namespace)
   topic_rewrite:

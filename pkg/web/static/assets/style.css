@@ -128,6 +128,11 @@ body {
 
 .node-children {
     display: none;
+}
+
+/* Nur beim Aufklappen durch den Nutzer animieren, nicht bei jedem Neuaufbau des Baums
+   (sonst blinken alle offenen Knoten bei jeder MQTT-Nachricht). */
+.node-children.animate {
     animation: fadeIn 0.2s ease;
 }
 

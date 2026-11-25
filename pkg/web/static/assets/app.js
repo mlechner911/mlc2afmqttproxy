@@ -23,6 +23,7 @@ const openPaths = new Set();
 openPaths.add('root');
 
 function toggleNode(el, path) {
+    el.nextElementSibling.classList.add('animate');
     const isClosed = el.nextElementSibling.classList.toggle('open');
     el.querySelector('.toggle-icon').classList.toggle('open');
     if (isClosed) openPaths.add(path);
@@ -99,7 +100,9 @@ function connectMQTT() {
     const wsUrl = `${proto}//${window.location.host}/mqtt`;
     
     mqttSocket = new WebSocket(wsUrl, ['mqtt']);
-    
+    mqttSocket.binaryType = 'arraybuffer';
+    rxBuffer = new Uint8Array(0);
+
     mqttSocket.onopen = () => {
         elConnBadge.textContent = 'Connected';
         elConnBadge.className = 'badge bg-success rounded-pill px-3 py-2';
@@ -125,39 +128,60 @@ function connectMQTT() {
         setTimeout(connectMQTT, 5000);
     };
 
-    mqttSocket.onmessage = async (event) => {
-        const buffer = await event.data.arrayBuffer();
-        const data = new Uint8Array(buffer);
-        
-        if (data.length > 0) {
-            const type = data[0] >> 4;
-            
-            if (type === 2) { // CONNACK
-                // Subscribe to #
-                const subPacket = new Uint8Array([
-                    0x82, 6, 0, 1, 0, 1, 35, 0
-                ]);
-                mqttSocket.send(subPacket);
-            } else if (type === 3) { // PUBLISH
-                handlePublish(data);
-            }
+    // MQTT über WebSocket ist ein Byte-Strom: ein Frame kann mehrere Pakete enthalten oder nur
+    // einen Teil eines Pakets. Bis 25.11.2026 wurde jeder Frame als genau ein Paket gelesen — das
+    // nächste Paket landete dann im Payload des vorigen (Binärmüll mit fremdem Topic im Baum).
+    mqttSocket.onmessage = (event) => {
+        const chunk = new Uint8Array(event.data);
+        const merged = new Uint8Array(rxBuffer.length + chunk.length);
+        merged.set(rxBuffer);
+        merged.set(chunk, rxBuffer.length);
+        rxBuffer = merged;
+
+        let pos = 0;
+        while (true) {
+            const pkt = nextPacket(rxBuffer, pos);
+            if (!pkt) break;
+            handlePacket(pkt.packet);
+            pos = pkt.end;
         }
+        rxBuffer = rxBuffer.slice(pos);
     };
 }
 
-function handlePublish(data) {
-    let offset = 1; // Skip Type & Flags byte
-    
-    // Decode Remaining Length (1-4 bytes)
+let rxBuffer = new Uint8Array(0);
+
+// nextPacket liefert das vollständige Paket ab pos samt Endposition, oder null, wenn es noch nicht
+// komplett im Puffer liegt.
+function nextPacket(buf, pos) {
+    if (buf.length - pos < 2) return null;
+    let offset = pos + 1;
     let multiplier = 1;
     let remainingLength = 0;
-    let digit = 0;
+    let digit;
     do {
-        digit = data[offset++];
+        if (offset >= buf.length) return null;
+        digit = buf[offset++];
         remainingLength += (digit & 127) * multiplier;
         multiplier *= 128;
     } while ((digit & 128) !== 0);
-    
+    const end = offset + remainingLength;
+    if (end > buf.length) return null;
+    return { packet: { header: buf[pos], body: buf.subarray(offset, end) }, end };
+}
+
+function handlePacket(pkt) {
+    const type = pkt.header >> 4;
+    if (type === 2) { // CONNACK → alles abonnieren (#, QoS 0)
+        mqttSocket.send(new Uint8Array([0x82, 6, 0, 1, 0, 1, 35, 0]));
+    } else if (type === 3) { // PUBLISH
+        handlePublish(pkt.header, pkt.body);
+    }
+}
+
+function handlePublish(header, data) {
+    let offset = 0;
+
     // Read Topic Length
     const topicLen = (data[offset] << 8) | data[offset+1];
     offset += 2;
@@ -166,8 +190,8 @@ function handlePublish(data) {
     const topic = new TextDecoder().decode(data.slice(offset, offset + topicLen));
     offset += topicLen;
     
-    // Check QoS from first byte (data[0])
-    const qos = (data[0] & 0x06) >> 1;
+    // QoS aus dem festen Header
+    const qos = (header & 0x06) >> 1;
     if (qos > 0) {
         offset += 2; // Skip Packet Identifier
     }
@@ -205,8 +229,19 @@ function updateTree(topic, payload) {
             current = current[part];
         }
     }
-    
-    renderTree();
+
+    scheduleRender();
+}
+
+// Höchstens alle 500 ms neu zeichnen, auch wenn zigbee2mqtt viele Nachrichten pro Sekunde schickt.
+let renderPending = false;
+function scheduleRender() {
+    if (renderPending) return;
+    renderPending = true;
+    setTimeout(() => {
+        renderPending = false;
+        requestAnimationFrame(renderTree);
+    }, 500);
 }
 
 // Tree Rendering
@@ -258,7 +293,8 @@ function valueNode(val) {
 }
 
 function createNode(key, val, path) {
-    const isObj = val !== null && typeof val === 'object' && !Array.isArray(val);
+    // Arrays wie Objekte als aufklappbare Knoten (Schlüssel = Index), sonst stand „[object Object]“ da.
+    const isObj = val !== null && typeof val === 'object';
     const hasChildren = isObj && Object.keys(val).length > 0;
     const currentPath = path ? `${path}/${key}` : key;
     const isOpen = openPaths.has(currentPath) || key === 'root';

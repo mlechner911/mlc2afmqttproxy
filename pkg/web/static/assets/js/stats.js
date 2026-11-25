@@ -1,6 +1,6 @@
 // Statistik-Tab: Zeitraum, Kennzahlen, Diagramme, Geräte. Unterbrechungen und Filter haben eigene
 // Tabs (interruptions.js, filters.js).
-import { API, getJSON, fmtNum, fmtDuration, el, HTTPError } from './api.js';
+import { API, getJSON, fmtNum, fmtDuration, fmtDateTime, el, HTTPError } from './api.js';
 import { messagesChart, bufferChart } from './charts.js';
 import { loadDevices } from './devices.js';
 
@@ -16,6 +16,9 @@ export const RANGES = {
 
 let range = RANGES[new URLSearchParams(location.search).get('range')] ? new URLSearchParams(location.search).get('range') : 'day';
 let auth = { authorized: false, devicesPublic: true };
+// base: die Daten des gewählten Zeitraums; zoom: [von, bis] oder null.
+let base = null;
+let zoom = null;
 const $ = (id) => document.getElementById(id);
 
 export function initStats() {
@@ -23,11 +26,48 @@ export function initStats() {
     for (const b of document.querySelectorAll('[data-range]')) {
         b.addEventListener('click', () => {
             range = b.dataset.range;
+            zoom = null;
             document.querySelectorAll('[data-range]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
             loadStats();
         });
     }
+    document.getElementById('zoom-reset').addEventListener('click', resetZoom);
     setInterval(() => { if (!document.hidden) loadStats(); }, 60e3);
+}
+
+function resetZoom() {
+    zoom = null;
+    renderCharts();
+}
+
+const zoomHandlers = {
+    onSelect: (a, b) => { zoom = [a, b]; renderCharts(); },
+    onReset: resetZoom,
+};
+
+// renderCharts zeichnet Nachrichten und Puffer für den Zeitraum oder den Zoom. Ein Zoom aus Monat
+// oder Jahr in die letzten 31 Tage lädt die 10-Minuten-Werte nach (wie mlc-autotunnel), statt
+// Tageswerte zu strecken.
+async function renderCharts() {
+    if (!base) return;
+    let view = base;
+    if (zoom) {
+        const [a, b] = zoom;
+        if (base.slotMs > SLOT && a >= Date.now() - 31 * DAY && b - a <= 31 * DAY) {
+            try {
+                const det = await getJSON(`${API}/history/detail?from=${new Date(a).toISOString()}&to=${new Date(b).toISOString()}`);
+                view = { points: det.slots.map((x) => ({ ...x, t: Date.parse(x.start) })), spans: det.spans, slotMs: SLOT };
+            } catch { /* bei Fehler: Tageswerte */ }
+        }
+        // Für die Y-Achse nur, was im Fenster liegt (plus der Abschnitt davor, der hineinreicht).
+        view = { ...view, points: view.points.filter((p) => p.t + view.slotMs > a && p.t < b) };
+        if (!zoom) return; // inzwischen zurückgesetzt
+    }
+    const from = zoom ? zoom[0] : base.from, to = zoom ? zoom[1] : base.to;
+    $('zoom-info').classList.toggle('hidden', !zoom);
+    $('zoom-label').textContent = zoom ? `${fmtDateTime(new Date(from).toISOString())} – ${fmtDateTime(new Date(to).toISOString())}` : '';
+    messagesChart($('chart-messages'), { ...view, from, to, zoom: zoomHandlers });
+    bufferChart($('chart-buffer'), { ...view, from, to, zoom: zoomHandlers });
 }
 
 export function setAuth(a) { auth = a; }
@@ -58,8 +98,8 @@ export async function loadStats() {
         // Tag/Woche: Kennzahlen aus genau dem Fenster des Diagramms (letzte 24 h / 7 Tage);
         // Monat/Jahr: aus den Tageswerten (Kalendertage).
         renderKPIs(r.detail ? sumWindow(points, spans, from, to) : hist.periods.find((p) => p.days === r.days));
-        messagesChart($('chart-messages'), { points, spans, from, to, slotMs });
-        bufferChart($('chart-buffer'), { points, from, to, slotMs });
+        base = { points, spans, from, to, slotMs };
+        await renderCharts();
     } catch (err) {
         if (err instanceof HTTPError && (err.status === 401 || err.status === 403)) {
             $('stats-locked').classList.remove('hidden');

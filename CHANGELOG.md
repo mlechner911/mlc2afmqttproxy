@@ -7,6 +7,8 @@ One line per change. Background, measurements and ticket references: release not
 ### Changed
 - Web UI: interruptions and filters have their own tabs; interruptions show a summary per reason and the longest one.
 - The sign-in form appears in every protected tab (Filters, Live).
+- Charts zoom by dragging across them; zooming into the last 31 days loads 10-minute values.
+- Chart tooltips are compact: period, colour, name and whole numbers on one line each.
 
 ## [1.2.1] - 2026-11-25
 

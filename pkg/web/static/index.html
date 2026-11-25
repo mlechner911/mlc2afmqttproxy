@@ -55,6 +55,11 @@
                     <button class="seg" data-range="year" aria-pressed="false">Year</button>
                 </fieldset>
                 <span id="range-label" class="text-sm text-slate-500 dark:text-slate-400"></span>
+                <span class="hidden text-xs text-slate-400 sm:inline">· drag across a chart to zoom</span>
+                <span id="zoom-info" class="hidden"><span class="inline-flex items-center gap-2 rounded-full bg-sky-100 px-3 py-1 text-xs text-sky-800 dark:bg-sky-900/40 dark:text-sky-200">
+                    Zoomed: <span id="zoom-label" class="font-semibold tabular-nums"></span>
+                    <button id="zoom-reset" class="font-semibold underline">Reset zoom</button>
+                </span></span>
             </div>
 
             <div id="kpis" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"></div>

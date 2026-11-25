@@ -93,7 +93,21 @@ func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packe
 
 	topic := pk.TopicName
 
-	// 1. Filter: AllowedPrefixes (Whitelist)
+	// 1. Filter: IgnoredPrefixes (Blacklist) — vor der Positivliste, damit ein Treffer der Regel
+	// zugeschrieben wird, die ihn ausdrücklich nennt (z. B. „homeassistant/“). Bis 25.11.2026 kam
+	// die Positivliste zuerst; was sie nicht erlaubte, zählte nur pauschal als „allow“. Verworfen
+	// wird in beiden Reihenfolgen dasselbe.
+	if h.filter != nil && len(h.filter.IgnoredPrefixes) > 0 {
+		for _, prefix := range h.filter.IgnoredPrefixes {
+			if strings.HasPrefix(topic, prefix) {
+				// Topic in der Blacklist -> Verwerfen (nicht speichern)
+				metrics.IncFiltered("ignore:" + prefix)
+				return pk, nil
+			}
+		}
+	}
+
+	// 2. Filter: AllowedPrefixes (Whitelist)
 	if h.filter != nil && len(h.filter.AllowedPrefixes) > 0 {
 		allowed := false
 		for _, prefix := range h.filter.AllowedPrefixes {
@@ -106,17 +120,6 @@ func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packe
 			// Topic nicht in der Whitelist -> Verwerfen (nicht speichern)
 			metrics.IncFiltered("allow")
 			return pk, nil
-		}
-	}
-
-	// 2. Filter: IgnoredPrefixes (Blacklist)
-	if h.filter != nil && len(h.filter.IgnoredPrefixes) > 0 {
-		for _, prefix := range h.filter.IgnoredPrefixes {
-			if strings.HasPrefix(topic, prefix) {
-				// Topic in der Blacklist -> Verwerfen (nicht speichern)
-				metrics.IncFiltered("ignore:" + prefix)
-				return pk, nil
-			}
 		}
 	}
 

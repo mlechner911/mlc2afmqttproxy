@@ -2,6 +2,14 @@
 
 One line per change. Background, measurements and ticket references: release notes in the project's Doc Hub (`releases/<version>.md`).
 
+## [1.2.1] - 2026-11-25
+
+### Fixed
+- Filter hits counted only as "not allowed" when the topic was also on the ignore list; the ignore list is now checked first.
+
+### Changed
+- `config.example.yaml` ignores `homeassistant/` (zigbee2mqtt discovery) explicitly.
+
 ## [1.2.0] - 2026-11-25
 
 **Upgrade:** statistics are now public by default (`server.public_stats`, `server.public_devices`); the live view, `/config` and `/filters` need `server.password` or a request from `127.0.0.1`. Without a password the web server no longer falls back to `127.0.0.1` unless `public_stats: false`. Rebuild with `task build` — the Taskfile now builds packages instead of single `main.go` files.

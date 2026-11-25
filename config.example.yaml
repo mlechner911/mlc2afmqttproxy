@@ -64,6 +64,9 @@ mqtt:
     allowed_prefixes:
       - "zigbee2mqtt/"
     ignored_prefixes:
+      # Home-Assistant-Discovery von zigbee2mqtt — eigener Eintrag, damit die Statistik zeigt, wie
+      # viel davon verworfen wird (sonst zählt es nur pauschal „passt zu keinem erlaubten Präfix“).
+      - "homeassistant/"
       - "zigbee2mqtt/bridge/logging"
       - "zigbee2mqtt/bridge/state"
     # Downstream: Nachrichten vom Upstream-Broker an lokale Clients forwarden (optional).

@@ -2,6 +2,12 @@
 
 One line per change. Background, measurements and ticket references: release notes in the project's Doc Hub (`releases/<version>.md`).
 
+## [Unreleased]
+
+### Changed
+- Web UI: interruptions and filters have their own tabs; interruptions show a summary per reason and the longest one.
+- The sign-in form appears in every protected tab (Filters, Live).
+
 ## [1.2.1] - 2026-11-25
 
 ### Fixed

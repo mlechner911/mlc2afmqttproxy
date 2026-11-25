@@ -1,5 +1,6 @@
-// Statistik-Tab: Zeitraum, Kennzahlen, Diagramme, Unterbrechungen, Geräte, Filter.
-import { API, getJSON, fmtNum, fmtDuration, fmtDateTime, el, STATES, HTTPError } from './api.js';
+// Statistik-Tab: Zeitraum, Kennzahlen, Diagramme, Geräte. Unterbrechungen und Filter haben eigene
+// Tabs (interruptions.js, filters.js).
+import { API, getJSON, fmtNum, fmtDuration, el, HTTPError } from './api.js';
 import { messagesChart, bufferChart } from './charts.js';
 import { loadDevices } from './devices.js';
 
@@ -59,7 +60,6 @@ export async function loadStats() {
         renderKPIs(r.detail ? sumWindow(points, spans, from, to) : hist.periods.find((p) => p.days === r.days));
         messagesChart($('chart-messages'), { points, spans, from, to, slotMs });
         bufferChart($('chart-buffer'), { points, from, to, slotMs });
-        renderInterruptions(hist.interruptions.filter((s) => Date.parse(s.end) >= from));
     } catch (err) {
         if (err instanceof HTTPError && (err.status === 401 || err.status === 403)) {
             $('stats-locked').classList.remove('hidden');
@@ -68,7 +68,6 @@ export async function loadStats() {
         console.error(err);
     }
     loadDevices({ range: r, from, to, auth });
-    loadFilters();
 }
 
 const COUNTERS = ['received', 'filtered', 'deduplicated', 'stored', 'forwarded', 'failed', 'dead_lettered', 'dropped_buffer_full'];
@@ -112,51 +111,5 @@ function renderKPIs(p) {
         kpi('Forwarding', avail == null ? '–' : `${avail.toFixed(avail >= 99.95 || avail === 0 ? 0 : 1)} %`,
             total ? `of ${fmtDuration(total)} running` : 'no data yet',
             avail == null ? '' : avail >= 99 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'),
-    );
-}
-
-function renderInterruptions(list) {
-    const box = $('interruptions');
-    if (list.length === 0) {
-        box.replaceChildren(el('p', { class: 'text-slate-500 dark:text-slate-400' }, 'None in this period — forwarding ran whenever the proxy was running.'));
-        return;
-    }
-    box.replaceChildren(el('div', { class: 'overflow-x-auto' }, el('table', { class: 'w-full min-w-[32rem]' },
-        el('thead', {}, el('tr', { class: 'table-head' }, ['From', 'To', 'Duration', 'Reason'].map((h) => el('th', { class: 'py-1.5 pr-4' }, h)))),
-        el('tbody', {}, list.map((s) => {
-            const st = STATES[s.state] || { label: s.state, pill: '' };
-            const secs = (Date.parse(s.end) - Date.parse(s.start)) / 1000;
-            return el('tr', { class: 'table-row' },
-                el('td', { class: 'py-1.5 pr-4 tabular-nums' }, fmtDateTime(s.start)),
-                el('td', { class: 'py-1.5 pr-4 tabular-nums' }, s.open ? 'ongoing' : fmtDateTime(s.end)),
-                el('td', { class: 'py-1.5 pr-4 tabular-nums' }, fmtDuration(secs)),
-                el('td', { class: 'py-1.5' }, el('span', { class: `pill ${st.pill}` }, st.label)));
-        })))));
-}
-
-async function loadFilters() {
-    const card = $('filters-card');
-    if (!auth.authorized) { card.classList.add('hidden'); return; }
-    let f;
-    try { f = await getJSON(`${API}/filters`); } catch { card.classList.add('hidden'); return; }
-    card.classList.remove('hidden');
-    const rule = (r) => {
-        const what = { allow: 'forward only', not_allowed: 'dropped: matches no allowed prefix', ignore: 'dropped' }[r.kind] || r.kind;
-        return el('tr', { class: 'table-row' },
-            el('td', { class: 'py-1.5 pr-4 font-mono text-xs' }, r.prefix ?? '—'),
-            el('td', { class: 'py-1.5 pr-4' }, what),
-            el('td', { class: 'py-1.5 text-right tabular-nums' }, r.kind === 'allow' ? '' : fmtNum(r.hits)));
-    };
-    $('filters').replaceChildren(
-        el('p', { class: 'mb-2 text-xs text-slate-500 dark:text-slate-400' }, `Target: ${f.target} · hits since the proxy started`),
-        f.rules.length
-            ? el('table', { class: 'mb-3 w-full' },
-                el('thead', {}, el('tr', { class: 'table-head' }, ['Topic prefix', 'Rule', 'Hits'].map((h, i) => el('th', { class: `py-1.5 ${i === 2 ? 'text-right' : 'pr-4'}` }, h)))),
-                el('tbody', {}, f.rules.map(rule)))
-            : el('p', { class: 'mb-3' }, 'No topic filters — every topic is forwarded.'),
-        el('p', {}, f.dedup_interval_ms > 0
-            ? `Duplicates within ${f.dedup_interval_ms} ms are skipped${f.dedup_ignore_keys.length ? ` (ignoring ${f.dedup_ignore_keys.join(', ')})` : ''}: ${fmtNum(f.deduplicated_total)} since start.`
-            : 'Deduplication is off.'),
-        ...(f.routes.length ? [el('p', { class: 'mt-2' }, `Additional routes: ${f.routes.map((r) => `${r.name} → ${r.upstream}${r.devices?.length ? ` (${r.devices.length} devices)` : ''}`).join(' · ')}`)] : []),
     );
 }

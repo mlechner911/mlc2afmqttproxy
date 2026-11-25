@@ -29,8 +29,12 @@
     </div>
     <div class="mx-auto mt-2 flex max-w-7xl items-end px-4" role="tablist" aria-label="Views">
         <button class="tab" role="tab" id="tab-stats" aria-controls="panel-stats" aria-selected="true">Statistics</button>
+        <button class="tab" role="tab" id="tab-interruptions" aria-controls="panel-interruptions" aria-selected="false">Interruptions</button>
+        <button class="tab" role="tab" id="tab-filters" aria-controls="panel-filters" aria-selected="false">
+            Filters <span class="lock" aria-hidden="true">🔒</span>
+        </button>
         <button class="tab" role="tab" id="tab-live" aria-controls="panel-live" aria-selected="false">
-            Live <span id="live-lock" aria-hidden="true">🔒</span>
+            Live <span class="lock" aria-hidden="true">🔒</span>
         </button>
         <button id="logout-btn" class="mb-1 ml-auto hidden text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">Sign out</button>
     </div>
@@ -40,7 +44,7 @@
     <!-- Statistik -->
     <section id="panel-stats" role="tabpanel" aria-labelledby="tab-stats" class="h-full overflow-y-auto">
         <div class="mx-auto max-w-7xl space-y-5 px-4 py-5">
-            <div id="stats-locked" class="card hidden text-sm">Statistics require sign-in — open the <b>Live</b> tab to sign in.</div>
+            <div id="stats-locked" class="card hidden text-sm">Statistics require sign-in — open the <b>Live</b> or <b>Filters</b> tab to sign in.</div>
 
             <div class="flex flex-wrap items-center gap-3">
                 <fieldset class="inline-flex overflow-hidden rounded-lg border border-slate-300 dark:border-slate-700">
@@ -65,11 +69,6 @@
             </div>
 
             <div class="card">
-                <h2 class="card-title">Interruptions — times without forwarding</h2>
-                <div id="interruptions" class="text-sm"></div>
-            </div>
-
-            <div class="card">
                 <div class="mb-3 flex flex-wrap items-center gap-3">
                     <h2 class="card-title mb-0">Zigbee devices</h2>
                     <span id="device-summary" class="text-xs text-slate-500 dark:text-slate-400"></span>
@@ -77,21 +76,38 @@
                 <div id="devices" class="overflow-x-auto text-sm"></div>
             </div>
 
-            <div id="filters-card" class="card hidden">
-                <h2 class="card-title">Filters and routes</h2>
-                <div id="filters" class="text-sm"></div>
-            </div>
-
             <p class="pb-2 text-center text-xs text-slate-400">Charts: MLTimeGraph © Michael Lechner</p>
         </div>
     </section>
 
-    <!-- Live -->
-    <section id="panel-live" role="tabpanel" aria-labelledby="tab-live" class="hidden h-full">
+    <!-- Unterbrechungen (öffentlich wie die Statistik) -->
+    <section id="panel-interruptions" role="tabpanel" aria-labelledby="tab-interruptions" class="hidden h-full overflow-y-auto">
+        <div class="mx-auto max-w-7xl space-y-5 px-4 py-5">
+            <div class="flex flex-wrap items-center gap-3">
+                <fieldset class="inline-flex overflow-hidden rounded-lg border border-slate-300 dark:border-slate-700">
+                    <legend class="sr-only">Period</legend>
+                    <button class="seg" data-int-days="7" aria-pressed="false">7 days</button>
+                    <button class="seg" data-int-days="30" aria-pressed="true">30 days</button>
+                    <button class="seg" data-int-days="365" aria-pressed="false">365 days</button>
+                </fieldset>
+                <span class="text-sm text-slate-500 dark:text-slate-400">Times without forwarding — the proxy kept buffering unless the buffer was full.</span>
+            </div>
+            <div id="int-summary" class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6"></div>
+            <div class="card text-sm"><div id="int-list"></div></div>
+        </div>
+    </section>
+
+    <!-- Filter (angemeldet) -->
+    <section id="panel-filters" role="tabpanel" aria-labelledby="tab-filters" class="hidden h-full overflow-y-auto">
+        <div class="mx-auto max-w-7xl px-4 py-5"><div id="filters"></div></div>
+    </section>
+
+    <!-- Anmeldung: erscheint für jeden geschützten Tab -->
+    <section id="panel-auth" class="hidden h-full overflow-y-auto">
         <div id="login" class="mx-auto mt-10 hidden max-w-sm px-4">
             <form id="login-form" class="card space-y-3">
-                <h2 class="font-semibold">Sign in for the live view</h2>
-                <p class="text-sm text-slate-500 dark:text-slate-400">The live view shows every MQTT message. Statistics stay public.</p>
+                <h2 class="font-semibold">Sign in</h2>
+                <p class="text-sm text-slate-500 dark:text-slate-400">Filters and the live view (every MQTT message) need a password. Statistics stay public.</p>
                 <label for="login-password" class="sr-only">Password</label>
                 <input id="login-password" type="password" autocomplete="current-password" placeholder="Password" required
                        class="w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 dark:border-slate-700">
@@ -99,10 +115,14 @@
                 <button class="btn-primary w-full" type="submit">Sign in</button>
             </form>
         </div>
-        <div id="live-local-only" class="mx-auto mt-10 hidden max-w-md px-4">
-            <div class="card text-sm">The live view is available on the device itself only: no <code>server.password</code> is set.</div>
+        <div id="local-only" class="mx-auto mt-10 hidden max-w-md px-4">
+            <div class="card text-sm">Available on the device itself only: no <code>server.password</code> is set.</div>
         </div>
-        <div id="live" class="mx-auto hidden h-full max-w-7xl flex-col px-4 py-4">
+    </section>
+
+    <!-- Live (angemeldet) -->
+    <section id="panel-live" role="tabpanel" aria-labelledby="tab-live" class="hidden h-full">
+        <div id="live" class="mx-auto flex h-full max-w-7xl flex-col px-4 py-4">
             <div class="mb-3 flex items-center gap-3">
                 <h2 class="font-semibold">Live MQTT traffic</h2>
                 <span id="conn-badge" class="pill bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">Connecting…</span>

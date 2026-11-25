@@ -217,7 +217,25 @@ type ServerConf struct {
 	Username string `yaml:"username"`
 	// Password ist das optionale Passwort für HTTP Basic Auth.
 	Password string `yaml:"password"`
+	// PublicStats: Statistik-Ansicht und ihre API (status, stats, history, devices, health) ohne
+	// Anmeldung — der Kunde soll sehen, ob der Proxy läuft und weiterleitet. Geschützt bleiben die
+	// Live-Ansicht (MQTT-Inhalte), Konfiguration und Filter. Unges. = true (seit 1.2.0).
+	PublicStats *bool `yaml:"public_stats,omitempty"`
+	// PublicDevices: Gerätenamen und -zahlen gehören zur öffentlichen Statistik. Unges. = true.
+	PublicDevices *bool `yaml:"public_devices,omitempty"`
 }
+
+// StatsPublic meldet, ob die Statistik ohne Anmeldung sichtbar ist (unges. = true).
+func (s ServerConf) StatsPublic() bool { return s.PublicStats == nil || *s.PublicStats }
+
+// DevicesPublic meldet, ob die Gerätestatistik ohne Anmeldung sichtbar ist (unges. = true;
+// nur zusammen mit StatsPublic).
+func (s ServerConf) DevicesPublic() bool {
+	return s.StatsPublic() && (s.PublicDevices == nil || *s.PublicDevices)
+}
+
+// HasLogin meldet, ob Benutzer und Passwort für den geschützten Teil gesetzt sind.
+func (s ServerConf) HasLogin() bool { return s.Username != "" && s.Password != "" }
 
 // WorkerConf enthält Einstellungen für den Forward-Worker.
 type WorkerConf struct {
@@ -369,9 +387,16 @@ func applySecureDefaults(cfg *Config) error {
 				"Konto eintragen oder bind: 127.0.0.1", cfg.MQTT.Bind)
 		}
 	}
-	if cfg.Server.Enable && !IsLoopbackHost(cfg.Server.Host) && (cfg.Server.Username == "" || cfg.Server.Password == "") {
-		log.Printf("WARNUNG: Dashboard ohne server.username/password — lauscht nur auf 127.0.0.1 statt %q", cfg.Server.Host)
-		cfg.Server.Host = "127.0.0.1"
+	// Ohne Anmeldung: Mit öffentlicher Statistik lauscht der Server weiter auf host — der geschützte
+	// Teil (Live, Konfiguration) antwortet dann nur Anfragen von 127.0.0.1 (web.requireAuth). Ohne
+	// öffentliche Statistik gibt es nichts Öffentliches; dann nur 127.0.0.1 (wie bis 1.1).
+	if cfg.Server.Enable && !IsLoopbackHost(cfg.Server.Host) && !cfg.Server.HasLogin() {
+		if cfg.Server.StatsPublic() {
+			log.Printf("WARNUNG: Dashboard ohne server.username/password — Statistik öffentlich auf %q, Live-Ansicht und Konfiguration nur von 127.0.0.1", cfg.Server.Host)
+		} else {
+			log.Printf("WARNUNG: Dashboard ohne server.username/password — lauscht nur auf 127.0.0.1 statt %q", cfg.Server.Host)
+			cfg.Server.Host = "127.0.0.1"
+		}
 	}
 	return nil
 }

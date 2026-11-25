@@ -145,7 +145,8 @@ func run() int {
 	var srv *http.Server
 	if cfg.Server.Enable {
 		log.Printf("Webserver lauscht auf Port %d mit API-Präfix '%s'", cfg.Server.Port, cfg.Server.APIPrefix)
-		srv = web.StartServer(cfg, db, web.Services{History: hist, Devices: devs}, Version, startTime)
+		srv = web.StartServer(cfg, db, web.Services{History: hist, Devices: devs,
+			Status: statusFunc(cfg, db, fwd, fwWorker, &mochiBroker, &paused, startTime)}, Version, startTime)
 	} else {
 		log.Println("Diagnose-Webserver ist deaktiviert (server.enable = false).")
 	}

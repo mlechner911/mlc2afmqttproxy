@@ -4,11 +4,8 @@ package web
 
 import (
 	"fmt"
-	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 	"embed"
@@ -106,6 +103,8 @@ var staticFS embed.FS
 type Services struct {
 	History *history.Store
 	Devices *devices.Tracker
+	// Status liefert den Kurzstatus (Zustand, Puffer, Verbindungen); nil = ohne /status.
+	Status func() Status
 }
 
 // StartServer initialisiert den Diagnose-Webserver.
@@ -117,14 +116,6 @@ func StartServer(cfg *config.Config, store *storage.Store, svc Services, version
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 	_ = r.SetTrustedProxies(nil) // keine X-Forwarded-For-Angaben übernehmen
-
-	// HTTP Basic Auth für Dashboard und API. Ohne Passwort lauscht der Server nur auf 127.0.0.1
-	// (config.applySecureDefaults) — bis 07.11.2026 auf allen Schnittstellen ohne Anmeldung.
-	if cfg.Server.Username != "" && cfg.Server.Password != "" {
-		r.Use(gin.BasicAuth(gin.Accounts{
-			cfg.Server.Username: cfg.Server.Password,
-		}))
-	}
 
 	// Sicherheits-Header. Kein CORS mehr: Bis 07.11.2026 stand hier Access-Control-Allow-Origin "*"
 	// — jede fremde Webseite im Browser eines Nutzers im LAN konnte Konfiguration, Statistik und
@@ -160,38 +151,7 @@ func StartServer(cfg *config.Config, store *storage.Store, svc Services, version
 		})
 	}
 
-	// API-Konfigurationsendpunkt für das Svelte-Frontend bereitstellen
-	r.GET("/config", GetConfigHandler(cfg, startTime))
-
-	// WebSocket-Verbindungen (für das Live-Dashboard) transparent an den Mochi Broker tunneln (Port 1885)
-	// Ziel ist der WebSocket-Listener des lokalen Brokers (mqtt.bind, Standard 127.0.0.1). Die
-	// Verbindung kommt dort von Loopback an und braucht keine Broker-Anmeldung — geschützt wird sie
-	// hier: Dashboard-Anmeldung und Origin-Prüfung (gegen Cross-Site-WebSocket-Hijacking, P3-02).
-	wsHost := cfg.MQTT.Bind
-	if wsHost == "" || wsHost == "0.0.0.0" || wsHost == "::" {
-		wsHost = "127.0.0.1"
-	}
-	wsTarget, _ := url.Parse("http://" + net.JoinHostPort(wsHost, strconv.Itoa(cfg.MQTT.WsPort)))
-	wsProxy := httputil.NewSingleHostReverseProxy(wsTarget)
-	r.GET("/mqtt", func(c *gin.Context) {
-		if !sameOrigin(c.Request) {
-			c.AbortWithStatus(http.StatusForbidden)
-			return
-		}
-		wsProxy.ServeHTTP(c.Writer, c.Request)
-	})
-
-	// APIs registrieren
-	r.GET(cfg.Server.APIPrefix+"/stats", GetStatsHandler(store))
-	r.GET(cfg.Server.APIPrefix+"/health", GetHealthHandler(version))
-	if svc.History != nil {
-		r.GET(cfg.Server.APIPrefix+"/history", GetHistoryHandler(svc.History))
-		r.GET(cfg.Server.APIPrefix+"/history/detail", GetHistoryDetailHandler(svc.History))
-	}
-	if svc.Devices != nil && svc.History != nil {
-		r.GET(cfg.Server.APIPrefix+"/devices", GetDevicesHandler(svc.Devices, svc.History))
-		r.GET(cfg.Server.APIPrefix+"/devices/history", GetDeviceHistoryHandler(svc.History))
-	}
+	registerRoutes(r, cfg, store, svc, version, startTime)
 
 	address := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	srv := &http.Server{

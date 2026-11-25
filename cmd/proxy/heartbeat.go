@@ -5,9 +5,11 @@ import (
 
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"mlc2afmqttproxy/pkg/broker"
+	"mlc2afmqttproxy/pkg/config"
 	"mlc2afmqttproxy/pkg/forwarder"
 	"mlc2afmqttproxy/pkg/metrics"
 	"mlc2afmqttproxy/pkg/storage"
+	"mlc2afmqttproxy/pkg/web"
 	"mlc2afmqttproxy/pkg/worker"
 )
 
@@ -46,4 +48,23 @@ func ageSeconds(t time.Time) float64 {
 		return -1
 	}
 	return float64(int64(time.Since(t).Seconds()))
+}
+
+// statusFunc liefert den Kurzstatus für /api/v1/status — dieselben Quellen wie der Heartbeat.
+func statusFunc(cfg *config.Config, db *storage.Store, fwd forwarder.Forwarder, w *worker.Worker,
+	local **mqtt.Server, paused *func() bool, start time.Time) func() web.Status {
+	return func() web.Status {
+		pending, _ := db.GetSize()
+		return web.Status{
+			Version:           Version,
+			UptimeS:           int64(time.Since(start).Seconds()),
+			Mode:              cfg.Mode,
+			State:             forwardState(fwd, w, *paused),
+			BufferPending:     int64(pending),
+			UpstreamConnected: upstreamUp(fwd, w),
+			ZigbeeConnected:   broker.LocalClients(*local) > 0,
+			LastForwardAgeS:   int64(ageSeconds(w.LastForward())),
+			LastReceiveAgeS:   int64(ageSeconds(metrics.LastReceived())),
+		}
+	}
 }

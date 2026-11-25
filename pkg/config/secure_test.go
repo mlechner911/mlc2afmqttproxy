@@ -46,15 +46,28 @@ func TestOpenBindNeedsLocalUsers(t *testing.T) {
 	}
 }
 
-// TestDashboardWithoutPasswordStaysLocal (P3-10): Ohne Passwort nur 127.0.0.1, mit Passwort die
-// eingestellte Adresse (Fernzugriff zum Testen).
+// TestDashboardWithoutPasswordStaysLocal (P3-10): Ohne Passwort und ohne öffentliche Statistik nur
+// 127.0.0.1; mit öffentlicher Statistik (Standard seit 1.2.0) die eingestellte Adresse — der
+// geschützte Teil prüft dann selbst auf 127.0.0.1 (web.requireAuth); mit Passwort die eingestellte
+// Adresse.
 func TestDashboardWithoutPasswordStaysLocal(t *testing.T) {
-	cfg, err := load(t, "server:\n  port: 8097\n")
+	cfg, err := load(t, "server:\n  port: 8097\n  public_stats: false\n")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.Server.Host != "127.0.0.1" {
-		t.Errorf("ohne Passwort: host = %q, want 127.0.0.1", cfg.Server.Host)
+		t.Errorf("ohne Passwort, nicht öffentlich: host = %q, want 127.0.0.1", cfg.Server.Host)
+	}
+	cfg, err = load(t, "server:\n  host: \"0.0.0.0\"\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Server.Host != "0.0.0.0" || !cfg.Server.StatsPublic() || !cfg.Server.DevicesPublic() || cfg.Server.HasLogin() {
+		t.Errorf("öffentliche Statistik ohne Passwort: %+v", cfg.Server)
+	}
+	cfg, err = load(t, "server:\n  public_devices: false\n")
+	if err != nil || cfg.Server.DevicesPublic() || !cfg.Server.StatsPublic() {
+		t.Errorf("public_devices: false nicht übernommen: %v %+v", err, cfg.Server)
 	}
 	cfg, err = load(t, "server:\n  host: \"0.0.0.0\"\n  username: mlc\n  password: geheim-im-test\n")
 	if err != nil {

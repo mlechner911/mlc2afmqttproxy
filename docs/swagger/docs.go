@@ -91,6 +91,35 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/filters": {
+            "get": {
+                "description": "Topic-Filter mit Treffern je Regel seit dem Start, Deduplizierung, zusätzliche Routen. Nur angemeldet.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Status"
+                ],
+                "summary": "Filter und Routen",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.FiltersResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/health": {
             "get": {
                 "description": "Zeigt an, ob der Proxy läuft, und gibt die aktuelle Version aus.",
@@ -206,6 +235,26 @@ const docTemplate = `{
                         "description": "Erfolgreiche Antwort",
                         "schema": {
                             "$ref": "#/definitions/web.StatsResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/status": {
+            "get": {
+                "description": "Läuft der Proxy, leitet er weiter? Zustand, Puffer, Verbindungen, Alter der letzten Weiterleitung. Öffentlich, wenn server.public_stats (Standard).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Status"
+                ],
+                "summary": "Kurzstatus",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.StatusResponse"
                         }
                     }
                 }
@@ -465,6 +514,38 @@ const docTemplate = `{
                 }
             }
         },
+        "web.FiltersResponse": {
+            "type": "object",
+            "properties": {
+                "dedup_ignore_keys": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "dedup_interval_ms": {
+                    "type": "integer"
+                },
+                "deduplicated_total": {
+                    "type": "integer"
+                },
+                "routes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/web.RouteInfo"
+                    }
+                },
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/web.Rule"
+                    }
+                },
+                "target": {
+                    "type": "string"
+                }
+            }
+        },
         "web.HealthResponse": {
             "type": "object",
             "properties": {
@@ -533,6 +614,39 @@ const docTemplate = `{
                 }
             }
         },
+        "web.RouteInfo": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "upstream": {
+                    "type": "string"
+                }
+            }
+        },
+        "web.Rule": {
+            "type": "object",
+            "properties": {
+                "hits": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "description": "Kind: allow (Topic muss mit einem dieser Präfixe beginnen) oder ignore.",
+                    "type": "string",
+                    "example": "ignore"
+                },
+                "prefix": {
+                    "type": "string"
+                }
+            }
+        },
         "web.StatsResponse": {
             "type": "object",
             "properties": {
@@ -566,6 +680,53 @@ const docTemplate = `{
                 },
                 "messages_stored_total": {
                     "type": "integer"
+                }
+            }
+        },
+        "web.StatusResponse": {
+            "type": "object",
+            "properties": {
+                "authorized": {
+                    "description": "Authorized: Diese Anfrage darf den geschützten Teil sehen (angemeldet oder lokal ohne Passwort).",
+                    "type": "boolean"
+                },
+                "buffer_pending": {
+                    "type": "integer"
+                },
+                "devices_public": {
+                    "type": "boolean"
+                },
+                "last_forward_age_s": {
+                    "description": "Alter in Sekunden; -1 = seit dem Start noch nie.",
+                    "type": "integer"
+                },
+                "last_receive_age_s": {
+                    "type": "integer"
+                },
+                "login_configured": {
+                    "description": "LoginConfigured: Es gibt ein Passwort; die Live-Ansicht lässt sich anmelden.",
+                    "type": "boolean"
+                },
+                "mode": {
+                    "type": "string",
+                    "example": "mqtt"
+                },
+                "state": {
+                    "description": "State: ok, upstream_down, paused, buffer_full (wie im Verlauf).",
+                    "type": "string",
+                    "example": "ok"
+                },
+                "upstream_connected": {
+                    "type": "boolean"
+                },
+                "uptime_s": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "string"
+                },
+                "zigbee_connected": {
+                    "type": "boolean"
                 }
             }
         }

@@ -174,6 +174,27 @@ definitions:
           $ref: '#/definitions/web.DeviceInfo'
         type: array
     type: object
+  web.FiltersResponse:
+    properties:
+      dedup_ignore_keys:
+        items:
+          type: string
+        type: array
+      dedup_interval_ms:
+        type: integer
+      deduplicated_total:
+        type: integer
+      routes:
+        items:
+          $ref: '#/definitions/web.RouteInfo'
+        type: array
+      rules:
+        items:
+          $ref: '#/definitions/web.Rule'
+        type: array
+      target:
+        type: string
+    type: object
   web.HealthResponse:
     properties:
       status:
@@ -221,6 +242,29 @@ definitions:
           $ref: '#/definitions/history.Period'
         type: array
     type: object
+  web.RouteInfo:
+    properties:
+      devices:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      upstream:
+        type: string
+    type: object
+  web.Rule:
+    properties:
+      hits:
+        type: integer
+      kind:
+        description: 'Kind: allow (Topic muss mit einem dieser Präfixe beginnen) oder
+          ignore.'
+        example: ignore
+        type: string
+      prefix:
+        type: string
+    type: object
   web.StatsResponse:
     properties:
       buffer_count:
@@ -248,6 +292,41 @@ definitions:
         type: integer
       messages_stored_total:
         type: integer
+    type: object
+  web.StatusResponse:
+    properties:
+      authorized:
+        description: 'Authorized: Diese Anfrage darf den geschützten Teil sehen (angemeldet
+          oder lokal ohne Passwort).'
+        type: boolean
+      buffer_pending:
+        type: integer
+      devices_public:
+        type: boolean
+      last_forward_age_s:
+        description: Alter in Sekunden; -1 = seit dem Start noch nie.
+        type: integer
+      last_receive_age_s:
+        type: integer
+      login_configured:
+        description: 'LoginConfigured: Es gibt ein Passwort; die Live-Ansicht lässt
+          sich anmelden.'
+        type: boolean
+      mode:
+        example: mqtt
+        type: string
+      state:
+        description: 'State: ok, upstream_down, paused, buffer_full (wie im Verlauf).'
+        example: ok
+        type: string
+      upstream_connected:
+        type: boolean
+      uptime_s:
+        type: integer
+      version:
+        type: string
+      zigbee_connected:
+        type: boolean
     type: object
 info:
   contact: {}
@@ -304,6 +383,26 @@ paths:
       summary: Verlauf eines Zigbee-Geräts
       tags:
       - Devices
+  /api/v1/filters:
+    get:
+      description: Topic-Filter mit Treffern je Regel seit dem Start, Deduplizierung,
+        zusätzliche Routen. Nur angemeldet.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.FiltersResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Filter und Routen
+      tags:
+      - Status
   /api/v1/health:
     get:
       description: Zeigt an, ob der Proxy läuft, und gibt die aktuelle Version aus.
@@ -385,4 +484,18 @@ paths:
       summary: Puffer-Statistik abrufen
       tags:
       - Stats
+  /api/v1/status:
+    get:
+      description: Läuft der Proxy, leitet er weiter? Zustand, Puffer, Verbindungen,
+        Alter der letzten Weiterleitung. Öffentlich, wenn server.public_stats (Standard).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.StatusResponse'
+      summary: Kurzstatus
+      tags:
+      - Status
 swagger: "2.0"

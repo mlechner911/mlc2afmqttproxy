@@ -5,9 +5,15 @@ server:
   # Wenn false, wird das Web-Dashboard und die API (Port 8097) komplett deaktiviert.
   enable: true
   port: 8097
-  # Anmeldung (HTTP Basic Auth) für Dashboard und API. OHNE Passwort lauscht das Dashboard
-  # nur auf 127.0.0.1 (am Gerät selbst); mit Passwort auf host (Standard alle Schnittstellen).
   # host: "0.0.0.0"
+  # Öffentlich (ohne Anmeldung): die Statistik — Kurzstatus, Verlauf, Unterbrechungen und
+  # (public_devices) die Zigbee-Geräte. So sieht der Kunde, ob der Proxy läuft und weiterleitet.
+  # public_stats: true
+  # public_devices: true
+  # Geschützt: Live-Ansicht (alle MQTT-Inhalte), Konfiguration, Filter. Anmeldung in der Seite
+  # oder per HTTP Basic Auth (curl -u). OHNE Passwort gibt es den geschützten Teil nur am Gerät
+  # selbst (Anfragen von 127.0.0.1) — hinter einem Reverse Proxy deshalb immer ein Passwort setzen.
+  # Mit public_stats: false und ohne Passwort lauscht das Dashboard nur auf 127.0.0.1.
   # username: "admin"
   # password: "CHANGEME"
 
@@ -51,6 +57,8 @@ mqtt:
     - last_seen
     - linkquality
     - elapsed
+  # Basis-Topic von zigbee2mqtt (z2m: mqtt.base_topic) für die Gerätestatistik.
+  # zigbee_base_topic: "zigbee2mqtt"
   # Optional: Themen (Topics) filtern (spart Platz & Bandbreite, im Dashboard trotzdem sichtbar).
   filter:
     allowed_prefixes:

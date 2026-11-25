@@ -15,6 +15,82 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/v1/devices": {
+            "get": {
+                "description": "Geräte aus zigbee2mqtt mit Nachrichten heute/7/30 Tage, mittlerem Sendeabstand und Status (ok, silent, offline, unknown).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Devices"
+                ],
+                "summary": "Zigbee-Geräte",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.DevicesResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/devices/history": {
+            "get": {
+                "description": "Ohne from: Tageswerte der letzten ` + "`" + `days` + "`" + ` Tage (1–400, Standard 30). Mit from (RFC3339, to optional): Stundenwerte, höchstens 31 Tage.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Devices"
+                ],
+                "summary": "Verlauf eines Zigbee-Geräts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Gerätename (friendly_name)",
+                        "name": "name",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Tage",
+                        "name": "days",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Beginn (RFC3339) — Stundenwerte",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ende (RFC3339)",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.DeviceHistoryResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/health": {
             "get": {
                 "description": "Zeigt an, ob der Proxy läuft, und gibt die aktuelle Version aus.",
@@ -174,6 +250,20 @@ const docTemplate = `{
                 }
             }
         },
+        "history.DeviceTotals": {
+            "type": "object",
+            "properties": {
+                "month": {
+                    "type": "integer"
+                },
+                "today": {
+                    "type": "integer"
+                },
+                "week": {
+                    "type": "integer"
+                }
+            }
+        },
         "history.Period": {
             "type": "object",
             "properties": {
@@ -219,6 +309,17 @@ const docTemplate = `{
                 },
                 "stored": {
                     "type": "integer"
+                }
+            }
+        },
+        "history.Point": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "start": {
+                    "type": "string"
                 }
             }
         },
@@ -274,6 +375,93 @@ const docTemplate = `{
                 "state": {
                     "type": "string",
                     "example": "upstream_down"
+                }
+            }
+        },
+        "web.DeviceHistoryResponse": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "points": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/history.Point"
+                    }
+                },
+                "resolution": {
+                    "description": "Resolution: \"day\" oder \"hour\".",
+                    "type": "string",
+                    "example": "day"
+                }
+            }
+        },
+        "web.DeviceInfo": {
+            "type": "object",
+            "properties": {
+                "availability": {
+                    "description": "Availability: online/offline laut z2m; leer, wenn z2m keine Verfügbarkeit meldet.",
+                    "type": "string"
+                },
+                "avg_interval_s": {
+                    "description": "AvgIntervalS ist der mittlere Abstand zwischen zwei Nachrichten in den letzten 7 Tagen\n(nur Laufzeit des Proxys); 0 = zu wenige Nachrichten für eine Aussage.",
+                    "type": "integer"
+                },
+                "battery": {
+                    "type": "number"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "ieee": {
+                    "type": "string",
+                    "example": "0x00158d0000000001"
+                },
+                "known": {
+                    "description": "Known: in bridge/devices aufgeführt (sonst nur aus einem Topic erschlossen).",
+                    "type": "boolean"
+                },
+                "last_seen": {
+                    "type": "string"
+                },
+                "linkquality": {
+                    "type": "number"
+                },
+                "messages": {
+                    "$ref": "#/definitions/history.DeviceTotals"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Wohnzimmer Temperatur"
+                },
+                "power_source": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "ok"
+                },
+                "type": {
+                    "description": "Type: Coordinator, Router oder EndDevice (z2m).",
+                    "type": "string"
+                },
+                "vendor": {
+                    "type": "string"
+                }
+            }
+        },
+        "web.DevicesResponse": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/web.DeviceInfo"
+                    }
                 }
             }
         },

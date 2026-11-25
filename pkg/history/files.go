@@ -116,6 +116,7 @@ func (s *Store) Flush(now time.Time) error {
 	clear(s.dirtyDays)
 	clear(s.dirtySlots)
 	clear(s.dirtySpans)
+	errs = append(errs, s.flushDevices(now))
 	return errors.Join(errs...)
 }
 

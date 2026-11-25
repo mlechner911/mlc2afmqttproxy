@@ -15,6 +15,7 @@ import (
 	"io/fs"
 
 	"github.com/gin-gonic/gin"
+	"mlc2afmqttproxy/pkg/devices"
 	"mlc2afmqttproxy/pkg/history"
 	"mlc2afmqttproxy/pkg/metrics"
 	"mlc2afmqttproxy/pkg/storage"
@@ -101,12 +102,17 @@ func GetConfigHandler(cfg *config.Config, startTime time.Time) gin.HandlerFunc {
 //go:embed static/*
 var staticFS embed.FS
 
+// Services sind die optionalen Datenquellen der Statistik-API; nil-Felder lassen ihre Endpunkte weg.
+type Services struct {
+	History *history.Store
+	Devices *devices.Tracker
+}
+
 // StartServer initialisiert den Diagnose-Webserver.
 // Registriert Middleware für statische Dateien, leitet WebSocket-Verbindungen
 // an den lokalen Mochi-MQTT Broker weiter und registriert die JSON-APIs.
 // Startet den Server in einer Goroutine und gibt das *http.Server Objekt für Graceful Shutdown zurück.
-// hist darf nil sein (dann ohne Verlaufs-API).
-func StartServer(cfg *config.Config, store *storage.Store, hist *history.Store, version string, startTime time.Time) *http.Server {
+func StartServer(cfg *config.Config, store *storage.Store, svc Services, version string, startTime time.Time) *http.Server {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
@@ -178,9 +184,13 @@ func StartServer(cfg *config.Config, store *storage.Store, hist *history.Store, 
 	// APIs registrieren
 	r.GET(cfg.Server.APIPrefix+"/stats", GetStatsHandler(store))
 	r.GET(cfg.Server.APIPrefix+"/health", GetHealthHandler(version))
-	if hist != nil {
-		r.GET(cfg.Server.APIPrefix+"/history", GetHistoryHandler(hist))
-		r.GET(cfg.Server.APIPrefix+"/history/detail", GetHistoryDetailHandler(hist))
+	if svc.History != nil {
+		r.GET(cfg.Server.APIPrefix+"/history", GetHistoryHandler(svc.History))
+		r.GET(cfg.Server.APIPrefix+"/history/detail", GetHistoryDetailHandler(svc.History))
+	}
+	if svc.Devices != nil && svc.History != nil {
+		r.GET(cfg.Server.APIPrefix+"/devices", GetDevicesHandler(svc.Devices, svc.History))
+		r.GET(cfg.Server.APIPrefix+"/devices/history", GetDeviceHistoryHandler(svc.History))
 	}
 
 	address := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)

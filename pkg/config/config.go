@@ -153,6 +153,9 @@ type MQTTConf struct {
 	// DeduplicateIgnoreKeys definiert JSON-Keys, die beim intelligenten
 	// Deduplizierungs-Vergleich ignoriert werden sollen (z.B. last_seen).
 	DeduplicateIgnoreKeys []string           `yaml:"deduplicate_ignore_keys,omitempty"`
+	// ZigbeeBaseTopic ist das Basis-Topic von zigbee2mqtt (z2m: mqtt.base_topic) für die
+	// Gerätestatistik. Leer = "zigbee2mqtt".
+	ZigbeeBaseTopic string `yaml:"zigbee_base_topic,omitempty"`
 	// Downstream ermöglicht den Empfang von Nachrichten vom Upstream-Broker
 	// und das Forwarden derselben an lokale MQTT-Clients (z.B. Aktor-Steuerung).
 	Downstream          *DownstreamConf      `yaml:"downstream_config,omitempty"`

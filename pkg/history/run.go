@@ -39,4 +39,7 @@ func (s *Store) logFlush(now time.Time) {
 	if err := s.Flush(now); err != nil {
 		log.Printf("[history] Schreiben fehlgeschlagen: %v", err)
 	}
+	if s.OnFlush != nil {
+		s.OnFlush()
+	}
 }

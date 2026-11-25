@@ -24,6 +24,15 @@ definitions:
       stored:
         type: integer
     type: object
+  history.DeviceTotals:
+    properties:
+      month:
+        type: integer
+      today:
+        type: integer
+      week:
+        type: integer
+    type: object
   history.Period:
     properties:
       buffer_max:
@@ -56,6 +65,13 @@ definitions:
         type: object
       stored:
         type: integer
+    type: object
+  history.Point:
+    properties:
+      count:
+        type: integer
+      start:
+        type: string
     type: object
   history.Slot:
     properties:
@@ -93,6 +109,70 @@ definitions:
       state:
         example: upstream_down
         type: string
+    type: object
+  web.DeviceHistoryResponse:
+    properties:
+      name:
+        type: string
+      points:
+        items:
+          $ref: '#/definitions/history.Point'
+        type: array
+      resolution:
+        description: 'Resolution: "day" oder "hour".'
+        example: day
+        type: string
+    type: object
+  web.DeviceInfo:
+    properties:
+      availability:
+        description: 'Availability: online/offline laut z2m; leer, wenn z2m keine
+          Verfügbarkeit meldet.'
+        type: string
+      avg_interval_s:
+        description: |-
+          AvgIntervalS ist der mittlere Abstand zwischen zwei Nachrichten in den letzten 7 Tagen
+          (nur Laufzeit des Proxys); 0 = zu wenige Nachrichten für eine Aussage.
+        type: integer
+      battery:
+        type: number
+      description:
+        type: string
+      ieee:
+        example: "0x00158d0000000001"
+        type: string
+      known:
+        description: 'Known: in bridge/devices aufgeführt (sonst nur aus einem Topic
+          erschlossen).'
+        type: boolean
+      last_seen:
+        type: string
+      linkquality:
+        type: number
+      messages:
+        $ref: '#/definitions/history.DeviceTotals'
+      model:
+        type: string
+      name:
+        example: Wohnzimmer Temperatur
+        type: string
+      power_source:
+        type: string
+      status:
+        example: ok
+        type: string
+      type:
+        description: 'Type: Coordinator, Router oder EndDevice (z2m).'
+        type: string
+      vendor:
+        type: string
+    type: object
+  web.DevicesResponse:
+    properties:
+      devices:
+        items:
+          $ref: '#/definitions/web.DeviceInfo'
+        type: array
     type: object
   web.HealthResponse:
     properties:
@@ -172,6 +252,58 @@ definitions:
 info:
   contact: {}
 paths:
+  /api/v1/devices:
+    get:
+      description: Geräte aus zigbee2mqtt mit Nachrichten heute/7/30 Tage, mittlerem
+        Sendeabstand und Status (ok, silent, offline, unknown).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.DevicesResponse'
+      summary: Zigbee-Geräte
+      tags:
+      - Devices
+  /api/v1/devices/history:
+    get:
+      description: 'Ohne from: Tageswerte der letzten `days` Tage (1–400, Standard
+        30). Mit from (RFC3339, to optional): Stundenwerte, höchstens 31 Tage.'
+      parameters:
+      - description: Gerätename (friendly_name)
+        in: query
+        name: name
+        required: true
+        type: string
+      - description: Tage
+        in: query
+        name: days
+        type: integer
+      - description: Beginn (RFC3339) — Stundenwerte
+        in: query
+        name: from
+        type: string
+      - description: Ende (RFC3339)
+        in: query
+        name: to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.DeviceHistoryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Verlauf eines Zigbee-Geräts
+      tags:
+      - Devices
   /api/v1/health:
     get:
       description: Zeigt an, ob der Proxy läuft, und gibt die aktuelle Version aus.

@@ -81,6 +81,7 @@ func (h *StoreHook) Provides(b byte) bool {
 // aktuellen Zeitstempel (für die FIFO-Abarbeitung) in der BadgerDB gespeichert.
 func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet, error) {
 	metrics.IncReceived()
+	observe(pk.TopicName, pk.Payload)
 
 	// "Tail Drop": Wenn die Festplatte (DB) voll ist, verwerfen wir sofort alle neuen Nachrichten.
 	if h.diskFull.Load() {

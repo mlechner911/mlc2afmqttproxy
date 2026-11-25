@@ -97,6 +97,8 @@ type Sample struct {
 	Totals Counters
 	Buffer int64
 	State  string
+	// Devices sind die Nachrichten je Gerät SEIT DER VORIGEN Messung (keine Stände).
+	Devices map[string]int64
 }
 
 // Store sammelt Tageswerte, Abschnitte und Zustandsintervalle und schreibt sie nach dir.
@@ -110,6 +112,10 @@ type Store struct {
 	dirtySlots map[string]bool // Tage zum Schreiben
 	spans      []Span          // zeitlich geordnet; das letzte kann noch offen sein
 	dirtySpans map[string]bool // Monate der Span-Anfänge zum Schreiben
+	deviceStore
+
+	// OnFlush (optional) läuft nach jedem Schreiben mit — z. B. um die Geräteliste zu sichern.
+	OnFlush func()
 
 	last    Sample
 	lastAt  time.Time
@@ -119,8 +125,9 @@ type Store struct {
 // Open lädt die in dir abgelegten Werte. Kaputte Dateien werden als .broken beiseitegelegt.
 func Open(dir string) (*Store, error) {
 	s := &Store{dir: dir, days: map[string]*Day{}, dirtyDays: map[string]bool{},
-		slots: map[int64]*Slot{}, dirtySlots: map[string]bool{}, dirtySpans: map[string]bool{}}
-	for _, load := range []func() error{s.loadDays, s.loadSlots, s.loadSpans} {
+		slots: map[int64]*Slot{}, dirtySlots: map[string]bool{}, dirtySpans: map[string]bool{},
+		deviceStore: newDeviceStore()}
+	for _, load := range []func() error{s.loadDays, s.loadSlots, s.loadSpans, s.loadDevices} {
 		if err := load(); err != nil {
 			return nil, err
 		}
@@ -150,4 +157,5 @@ func (s *Store) Record(smp Sample, at time.Time) {
 	d.BufferMax = max(d.BufferMax, smp.Buffer)
 	s.dirtyDays[date[:len(monthLayout)]] = true
 	s.addSlot(at, delta, smp.Buffer)
+	s.addDevices(smp.Devices, at)
 }

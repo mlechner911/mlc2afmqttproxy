@@ -154,3 +154,32 @@ func TestPrune(t *testing.T) {
 		t.Fatal("Tageswerte (400 Tage) dürfen nach 31 Tagen nicht weg sein")
 	}
 }
+
+func TestDevices(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir)
+	rec := func(at time.Time, c map[string]int64) {
+		s.Record(Sample{State: StateOK, Devices: c}, at)
+	}
+	rec(t0.AddDate(0, 0, -10), map[string]int64{"a": 5})
+	rec(t0.AddDate(0, 0, -3), map[string]int64{"a": 2, "b": 1})
+	rec(t0, map[string]int64{"a": 1})
+	rec(t0.Add(70*time.Minute), map[string]int64{"a": 4})
+
+	tot := s.DeviceTotals(t0.Add(2 * time.Hour))
+	if tot["a"] != (DeviceTotals{Today: 5, Week: 7, Month: 12}) || tot["b"].Week != 1 {
+		t.Fatalf("Summen = %+v", tot)
+	}
+	hours := s.DeviceHours("a", t0, t0.Add(3*time.Hour))
+	if len(hours) != 2 || hours[0].Count != 1 || hours[1].Count != 4 {
+		t.Fatalf("Stunden = %+v", hours)
+	}
+	if err := s.Flush(t0.Add(2 * time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	r := open(t, dir)
+	days := r.DeviceDays("b", 30, t0)
+	if len(days) != 3 || days[1].Count != 1 || days[0].Count != 0 {
+		t.Fatalf("Tage nach Neuladen = %+v", days)
+	}
+}

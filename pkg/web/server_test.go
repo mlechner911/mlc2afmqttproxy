@@ -24,7 +24,7 @@ func startTestServer(t *testing.T, user, pass string) string {
 	cfg := &config.Config{}
 	cfg.Server = config.ServerConf{Enable: true, Host: "127.0.0.1", Port: port, APIPrefix: "/api/v1", Username: user, Password: pass}
 	cfg.MQTT.Bind, cfg.MQTT.WsPort = "127.0.0.1", 1 // Tunnelziel nicht erreichbar — hier geht es um die Prüfung davor
-	srv := StartServer(cfg, st, nil, "test", time.Now())
+	srv := StartServer(cfg, st, Services{}, "test", time.Now())
 	t.Cleanup(func() { _ = srv.Close(); st.Close() })
 	base := fmt.Sprintf("http://127.0.0.1:%d", port)
 	for i := 0; i < 100; i++ {

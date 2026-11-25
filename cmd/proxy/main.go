@@ -123,6 +123,10 @@ func run() int {
 		defer rdb.Store.Close()
 	}
 
+	// 3c. Verlaufs- und Gerätestatistik (läuft ab Schritt 9); der Gerätebeobachter hängt am Broker.
+	hist := openHistory(cfg)
+	devs := openDevices(cfg, hist)
+
 	// 4. Mochi MQTT Broker starten
 	log.Printf("Lokal-Broker lauscht auf TCP :%d und WebSocket :%d", cfg.MQTT.LocalPort, cfg.MQTT.WsPort)
 	mochiBroker, err := broker.StartLocalBroker(cfg.MQTT.Bind, cfg.MQTT.LocalUsers, cfg.MQTT.LocalPort, cfg.MQTT.WsPort, db, cfg.MQTT.Filter, cfg.MQTT.DeduplicateIntervalMs, cfg.MQTT.DeduplicateIgnoreKeys, cfg.Storage.MaxSizeMB, routes...)
@@ -135,15 +139,13 @@ func run() int {
 	fwWorker.SetDeadLetter(filepath.Join(cfg.Storage.Path, "dead-letter.jsonl"))
 	defer fwWorker.Stop()
 
-	// 5b. Verlaufsstatistik (Tage, 10-Minuten-Abschnitte, Unterbrechungen); läuft ab Schritt 9.
-	hist := openHistory(cfg)
 	paused := func() bool { return false }
 
 	// 6. Diagnose-Webserver und Live-Dashboard auf dem konfigurierten Port starten
 	var srv *http.Server
 	if cfg.Server.Enable {
 		log.Printf("Webserver lauscht auf Port %d mit API-Präfix '%s'", cfg.Server.Port, cfg.Server.APIPrefix)
-		srv = web.StartServer(cfg, db, hist, Version, startTime)
+		srv = web.StartServer(cfg, db, web.Services{History: hist, Devices: devs}, Version, startTime)
 	} else {
 		log.Println("Diagnose-Webserver ist deaktiviert (server.enable = false).")
 	}
@@ -227,7 +229,7 @@ func run() int {
 		rw.Start()
 		defer rw.Stop()
 	}
-	stopHistory := startHistory(hist, sampler(db, fwd, fwWorker, &paused))
+	stopHistory := startHistory(hist, sampler(db, fwd, fwWorker, devs, &paused))
 
 	sig := <-quit
 	log.Printf("Signal %v empfangen. Beende Proxy geordnet (Graceful Shutdown)...", sig)

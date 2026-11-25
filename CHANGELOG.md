@@ -6,6 +6,7 @@ One line per change. Background, measurements and ticket references: release not
 
 ### Fixed
 - Filter hits counted only as "not allowed" when the topic was also on the ignore list; the ignore list is now checked first.
+- Heartbeat keys now match what the Sensor Monitor accepts (`svc_buffer_pending`, `svc_upstream_connected`, … and `meta.svc_version` / `meta.svc_product`); 1.2.0 used names the monitor dropped. An age is left out until the event first happened, instead of -1.
 
 ### Changed
 - `config.example.yaml` ignores `homeassistant/` (zigbee2mqtt discovery) explicitly.

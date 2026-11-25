@@ -80,13 +80,13 @@ func TestHeartbeat(t *testing.T) {
 	if _, ok := vals["svc_uptime_s"]; !ok {
 		t.Fatal("svc_uptime_s fehlt")
 	}
-	if _, ok := body["meta"]; ok && body["meta"].(map[string]any)["version"] != "" {
-		t.Fatalf("meta.version = %v; ohne Version leer", body["meta"])
+	if m := body["meta"].(map[string]any); m["svc_product"] != Product || m["svc_version"] != nil {
+		t.Fatalf("meta = %v; ohne Version nur das Produkt", m)
 	}
 }
 
 // TestHeartbeatReadings (T-AFMQ-20261125-01): Pufferstand, Verbindungen und Zähler gehen im
-// selben Heartbeat mit, die Version als meta.version; Grundwerte lassen sich nicht überschreiben.
+// selben Heartbeat mit, Version und Produkt als meta.svc_version/svc_product (so liest mlcmonit sie); Grundwerte lassen sich nicht überschreiben.
 func TestHeartbeatReadings(t *testing.T) {
 	var body map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -97,7 +97,7 @@ func TestHeartbeatReadings(t *testing.T) {
 
 	r := New(Options{Device: "svc-edgeproxy", IngestURL: srv.URL, Token: "t", Version: "1.2.0",
 		Readings: func() map[string]float64 {
-			return map[string]float64{"buffer_pending": 42, "upstream_connected": 0, "service_up": 7}
+			return map[string]float64{"svc_buffer_pending": 42, "svc_upstream_connected": 0, "service_up": 7}
 		}})
 	r.sendHeartbeat()
 
@@ -108,15 +108,15 @@ func TestHeartbeatReadings(t *testing.T) {
 		keys = append(keys, m["key"].(string))
 		vals[m["key"].(string)] = m["value"].(float64)
 	}
-	want := []string{"service_up", "service_state", "svc_uptime_s", "buffer_pending", "upstream_connected"}
+	want := []string{"service_up", "service_state", "svc_uptime_s", "svc_buffer_pending", "svc_upstream_connected"}
 	if strings.Join(keys, ",") != strings.Join(want, ",") {
 		t.Fatalf("Schlüssel = %v; want %v", keys, want)
 	}
-	if vals["buffer_pending"] != 42 || vals["service_up"] != 1 {
+	if vals["svc_buffer_pending"] != 42 || vals["service_up"] != 1 {
 		t.Fatalf("Werte = %v", vals)
 	}
-	if v := body["meta"].(map[string]any)["version"]; v != "1.2.0" {
-		t.Fatalf("meta.version = %v; want 1.2.0", v)
+	if m := body["meta"].(map[string]any); m["svc_product"] != Product || m["svc_version"] != "1.2.0" {
+		t.Fatalf("meta = %v; want svc_product + svc_version 1.2.0", m)
 	}
 }
 

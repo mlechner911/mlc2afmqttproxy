@@ -16,12 +16,12 @@
 package svcmon
 
 import (
-	"sort"
 	"bytes"
 	"context"
 	"encoding/json"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -48,28 +48,28 @@ type Options struct {
 	// cmd/svc/<kundennr>/<name>; leer → cmd/svc/<name> (nur Eigenbetrieb). Seit 12.11.2026 lässt
 	// der Monitor eine Kunden-Verbindung nur noch ihren eigenen Zweig lesen (T-SENS-20261107-02.1).
 	Customer string
-	Broker         string        // Upstream-MQTT (tcp://host:port) für die Steuerung
-	Username       string        // Upstream-MQTT-Benutzer (= Proxy-Upstream-Creds)
-	Password       string        // Upstream-MQTT-Passwort / Token
-	Version        string        // Proxy-Version (Log und Heartbeat-Feld meta.version)
+	Broker   string // Upstream-MQTT (tcp://host:port) für die Steuerung
+	Username string // Upstream-MQTT-Benutzer (= Proxy-Upstream-Creds)
+	Password string // Upstream-MQTT-Passwort / Token
+	Version  string // Proxy-Version (Log und Heartbeat-Feld meta.svc_version)
 	// Readings liefert zusätzliche Zahlen für den Heartbeat (Puffer, Verbindungen, Zähler);
 	// nil = nur service_up/service_state/svc_uptime_s. Muss schnell sein und darf nicht blockieren.
-	Readings func() map[string]float64
-	MaxPause       time.Duration // Höchstdauer von „pause"/„drain" (Default 60 min), danach läuft der Versand wieder
-	OnStop         func()        // „stop"  → Proxy geordnet beenden
-	OnRestart      func()        // „restart" → Proxy beenden (Supervisor startet neu)
+	Readings  func() map[string]float64
+	MaxPause  time.Duration // Höchstdauer von „pause"/„drain" (Default 60 min), danach läuft der Versand wieder
+	OnStop    func()        // „stop"  → Proxy geordnet beenden
+	OnRestart func()        // „restart" → Proxy beenden (Supervisor startet neu)
 }
 
 // Reporter hält Heartbeat- und Steuer-Verbindung.
 type Reporter struct {
-	o      Options
-	name   string // logischer Name (Device ohne "svc-") → cmd/svc/<name>
-	state  atomic.Int32
+	o     Options
+	name  string // logischer Name (Device ohne "svc-") → cmd/svc/<name>
+	state atomic.Int32
 	// pauseUntil: Ende der laufenden Pause (UnixNano); 0 = keine
 	pauseUntil atomic.Int64
 	start      time.Time
-	httpc  *http.Client
-	client mqtt.Client
+	httpc      *http.Client
+	client     mqtt.Client
 }
 
 // New erzeugt einen Reporter (Zustand „läuft").
@@ -144,7 +144,7 @@ func (r *Reporter) sendHeartbeat() {
 	body, _ := json.Marshal(map[string]any{
 		"device":   r.o.Device,
 		"readings": r.readings(),
-		"meta":     map[string]string{"version": r.o.Version},
+		"meta":     r.meta(),
 	})
 	req, err := http.NewRequest(http.MethodPost, r.o.IngestURL, bytes.NewReader(body))
 	if err != nil {
@@ -161,6 +161,21 @@ func (r *Reporter) sendHeartbeat() {
 	if resp.StatusCode >= 300 {
 		log.Printf("[svcmon] Heartbeat abgelehnt: HTTP %d", resp.StatusCode)
 	}
+}
+
+// Product: Produktname im Heartbeat (meta.svc_product). mlcmonit vergleicht Dienst-Versionen
+// ohne Produktangabe mit der eigenen Server-Version — der Proxy hat eigene Nummern und wäre
+// dort sonst immer „veraltet“.
+const Product = "mlc2afmqttproxy"
+
+// meta: Version und Produkt, wie mlcmonit sie liest (svc_version, svc_product). Ohne Version
+// nur das Produkt.
+func (r *Reporter) meta() map[string]string {
+	m := map[string]string{"svc_product": Product}
+	if r.o.Version != "" {
+		m["svc_version"] = r.o.Version
+	}
+	return m
 }
 
 // readings: Grundwerte, dann die zusätzlichen aus Options.Readings in fester Reihenfolge

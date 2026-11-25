@@ -152,10 +152,12 @@ mitüberwacht, ohne dass der Proxy von der Monitor-Software abhängt.
 **Zwei Kanäle (beide einzeln abschaltbar):**
 * **Heartbeat (raus):** alle `interval_s` Sekunden ein `POST` an den Ingest-Endpunkt
   (`monitor.ingest_url`, Default = `http.endpoint`) mit Header `X-Ingest-Token`. Payload:
-  `service_up=1`, `service_state` (1 läuft · 2 pausiert · 3 leert), `svc_uptime_s`, seit 1.2.0
-  außerdem `buffer_pending`, `buffer_pending_mb`, `upstream_connected`, `zigbee_connected`,
-  `last_forward_age_s`, `last_receive_age_s` (-1 = seit Start noch nie), `forward_failed_total`,
-  `dropped_full_total`, `dead_lettered_total` und `meta.version`. Ein Proxy kann „läuft“ melden
+  `service_up=1`, `service_state` (1 läuft · 2 pausiert · 3 leert), `svc_uptime_s`, seit 1.2.1
+  außerdem `svc_buffer_pending`, `svc_buffer_mb`, `svc_upstream_connected`, `svc_zigbee_connected`,
+  `svc_last_forward_age_s`, `svc_last_receive_age_s` (fehlen, solange es seit dem Start noch
+  nichts gab), `svc_forward_failed_total`, `svc_dropped_full_total`, `svc_dead_lettered_total`
+  und `meta.svc_version` / `meta.svc_product`. Die Namen sind die, die der Monitor angemeldet hat
+  — einen unbekannten Schlüssel verwirft er still (1.2.0 schickte andere). Ein Proxy kann „läuft“ melden
   und trotzdem nichts weiterleiten — diese Werte zeigen es. Der
   Monitor legt daraus automatisch das Gerät `svc-edgeproxy` an. **Bleibt der Heartbeat
   aus, erzeugt der Monitor selbst ein „Keine-Daten"-Ereignis** — keine Down-Logik im Proxy nötig.

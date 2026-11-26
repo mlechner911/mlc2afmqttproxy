@@ -133,23 +133,20 @@ func TestPolicyModes(t *testing.T) {
 	}
 }
 
-// TestPolicyListWithoutModeIsStrict (B-AFMQ-20261126-01): Route demo mit Liste, ohne
-// control_allow — ein Gerät der Route, das nicht in der Liste steht, wird abgelehnt.
-func TestPolicyListWithoutModeIsStrict(t *testing.T) {
-	sw := "0xoffline" // ein anderes Gerät der Route
-	p := NewPolicy("", map[string][]string{plug.IEEE: {"state"}}, []string{plug.IEEE, sw}, lookup, 10)
-	if p.Mode() != AllowList {
-		t.Fatalf("Modus %q, soll list", p.Mode())
+// TestPolicyListNeverRestrictsByDefault: Vorgabe ist, nie einzuschränken (Michael, 26.11.2026).
+// Eine Liste ohne allow-Modus ergänzt nur Felder; einschränken nur mit ausdrücklich allow: list.
+func TestPolicyListNeverRestrictsByDefault(t *testing.T) {
+	sw := "0xoffline" // ein anderes Gerät des Mandanten, nicht in der Liste
+	p := NewPolicy("", map[string][]string{plug.IEEE: {"child_lock"}}, nil, lookup, 10)
+	if p.Mode() != AllowOperate {
+		t.Fatalf("Modus %q, soll operate", p.Mode())
 	}
 	now := time.Now()
-	if _, r := p.Check(Request{IEEE: sw, ID: "x", Fields: map[string]any{"state": "ON"}}, now); r != ReasonNotAllowed {
-		t.Errorf("nicht gelistetes Gerät: %q", r)
+	if _, r := p.Check(Request{IEEE: sw, ID: "x", Fields: map[string]any{"state": "ON"}}, now); r != ReasonOffline {
+		t.Errorf("nicht gelistetes Gerät muss durch die Freigabe kommen (hier: offline): %q", r)
 	}
-	if _, r := p.Check(Request{IEEE: plug.IEEE, ID: "x", Fields: map[string]any{"state": "ON"}}, now); r != "" {
-		t.Errorf("gelistetes Gerät: %q", r)
-	}
-	if NewPolicy("", nil, nil, lookup, 10).Mode() != AllowOperate {
-		t.Error("ohne Liste soll operate gelten")
+	if _, r := p.Check(Request{IEEE: plug.IEEE, ID: "x", Fields: map[string]any{"child_lock": "LOCK"}}, now); r != "" {
+		t.Errorf("Zusatzfeld aus der Liste: %q", r)
 	}
 }
 

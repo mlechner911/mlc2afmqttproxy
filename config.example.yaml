@@ -144,7 +144,7 @@ monitor:
 #      - "Wohnzimmer Temperatur"
 
 #    # Rückweg über diese Route: nur ihre devices; control_allow wie control.allow unten.
-#    # Mit Liste und ohne control_allow gilt list: nur die gelisteten Geräte.
+#    control_allow: operate
 #    control:
 #      "0x00158d0000000001": [child_lock]
 
@@ -154,11 +154,11 @@ monitor:
 # der Monitor; der Proxy begrenzt es auf das, was hier erlaubt ist UND was das Gerät setzen kann.
 #control:
 #  enabled: true                 # false = Rückweg aus
-#  allow: operate                # fehlt: list, wenn devices gesetzt ist, sonst operate
+#  allow: operate                # Vorgabe: schränkt NIE ein — jedes Gerät des Mandanten ist schaltbar
 #                                # operate: state, brightness, color_temp, color, position, state_<kanal>
 #                                # writable: alles, was das Gerät als setzbar meldet (auch Kalibrierung)
-#                                # list: nur die devices-Liste unten (strenger Weg)
-#  devices:                      # Felder je Gerät: bei list allein, bei ausdrücklich operate/writable zusätzlich
+#                                # list: nur die devices-Liste unten — nur so schränkt eine Liste ein
+#  devices:                      # Felder je Gerät: bei operate/writable zusätzlich, bei list allein
 #    "0x00158d0000000001": [child_lock]
 #  broker: "tcp://127.0.0.1:1883"  # nur wenn zigbee2mqtt NICHT am Proxy-Broker hängt (z. B. Mosquitto)
 #  subscribe: "cmd/zb/#"         # Befehls-Abo am Upstream (Vorgabe)

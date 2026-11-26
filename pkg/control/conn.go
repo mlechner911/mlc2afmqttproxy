@@ -83,10 +83,11 @@ func (c *conn) subscribeAll(ctx context.Context, cm *autopaho.ConnectionManager,
 	for _, t := range topics {
 		sa, err := cm.Subscribe(ctx, &paho.Subscribe{Subscriptions: []paho.SubscribeOptions{{Topic: t, QoS: 1, NoLocal: true}}})
 		switch {
+		case sa != nil && len(sa.Reasons) > 0 && sa.Reasons[0] >= 0x80:
+			// paho meldet das auch als err, aber ohne Code — der Code sagt, warum (0x87 = keine Berechtigung).
+			log.Printf("[control %s] Abo %s vom Broker ABGELEHNT (0x%02x) — Befehle kommen nicht an", c.name, t, sa.Reasons[0])
 		case err != nil:
 			log.Printf("[control %s] Abo %s fehlgeschlagen: %v", c.name, t, err)
-		case len(sa.Reasons) > 0 && sa.Reasons[0] >= 0x80:
-			log.Printf("[control %s] Abo %s vom Broker ABGELEHNT (0x%02x) — Befehle kommen nicht an", c.name, t, sa.Reasons[0])
 		default:
 			log.Printf("[control %s] abonniert: %s", c.name, t)
 		}

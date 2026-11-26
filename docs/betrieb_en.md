@@ -12,7 +12,11 @@ endpoint, the MLC Sensor Monitor). What only applies to the MLC Sensor Monitor i
 Zigbee devices → zigbee2mqtt → proxy's local broker (:1884) → buffer (BadgerDB, ./data)
                                                                 → worker → upstream
                                                                 → per route: own buffer → own upstream
+upstream (monitor) → cmd/zb/…/set → return path → zigbee2mqtt/<device>/set → device, ack …/ack back
 ```
+
+- **Return path:** commands from the monitor go straight to zigbee2mqtt without a buffer; what
+  cannot happen right away is rejected ([switching devices](mlc-sensor-monitor_en.md#switching-devices-return-path)).
 
 - zigbee2mqtt (or any MQTT client) **publishes to the proxy**, not directly to the upstream. In z2m:
   `mqtt.server: mqtt://<proxy-host>:1884`.
@@ -134,6 +138,10 @@ cut) does.
   encrypted access (VPN, SSH tunnel). Failed attempts are slowed to about one per second.
 - **An upstream broker in front** (e.g. mosquitto with `mqttbridge --bidi`) needs the same care:
   whatever reaches it reaches the proxy through the bridge.
+- **Return path:** whoever can write commands into the tenant's branch at the monitor switches
+  the controls of all devices of that tenant — the monitor allows that only for its own server.
+  Restrict to single devices: `control.allow: list` with `control.devices`; switch off entirely:
+  `control.enabled: false`. Settings and calibration only with `allow: writable`.
 - **Encrypt the connection to the upstream** as soon as it leaves the premises (`ssl://`/`wss://`
   or `https://`).
 - The proxy is checked with every MLC Sensor Monitor release (`task edge:check`: vet, tests, known

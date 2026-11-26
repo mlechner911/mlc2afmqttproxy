@@ -2,6 +2,25 @@
 
 One line per change. Background, measurements and ticket references: release notes in the project's Doc Hub (`releases/<version>.md`).
 
+## [Unreleased]
+
+**Upgrade:** commands from the Sensor Monitor now reach zigbee2mqtt through the proxy, switched on by default. Without configuration the monitor may set the controls (`state`, `brightness`, `color_temp`, `color`, `position`, `state_<channel>`) of every device of its tenant; `control.enabled: false` turns this off. `mqtt.downstream_config` is ignored (it never worked) and `…/set`, `…/get` and `bridge/request/…` are no longer forwarded upstream. If zigbee2mqtt is attached to another broker (e.g. Mosquitto next to Home Assistant), set `control.broker`.
+
+### Added
+- Return path: commands on `cmd/zb/<…>/<ieee>/set` from the upstream go to `zigbee2mqtt/<device>/set`; the acknowledgement on the same topic with `/ack` reports `ok` only once the device reports the new state, otherwise `timeout` or `rejected` with a reason.
+- `control.allow` (routes: `control_allow`): `operate` (default, controls only), `writable` (every field the device reports as settable, including settings and calibration), `list` (only `control.devices` / `routes[].control`). Without `list`, a list only adds fields and never restricts.
+- Each route switches only its own `devices`; newly paired devices are switchable without a restart.
+- Commands are never buffered or retried: stored (retained) commands are dropped, a command sent while the proxy was offline is never executed late, at most 10 commands per device and minute.
+- `control.subscribe` / `routes[].control_subscribe` (default `cmd/zb/#`): no customer number needed on the proxy.
+- `/api/v1/control` and a "Remote control" card in the Filters tab: scope per upstream, results since start, last 200 commands.
+- `commands_skipped_total` counts commands that were not forwarded upstream.
+
+### Changed
+- A subscription the broker rejects is logged with its reason code (e.g. `0x87` not authorized).
+
+### Removed
+- `mqtt.downstream_config` (cloud → local relay); replaced by the return path above.
+
 ## [1.4.0] - 2026-11-26
 
 ### Added

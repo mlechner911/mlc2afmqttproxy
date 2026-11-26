@@ -84,6 +84,7 @@ routes:
 - Mit `devices` gehen **nur** diese Geräte über die Route hinaus, dazu eine auf sie gekürzte
   Geräteliste (`bridge/devices`); andere `bridge/*`-Meldungen nie.
 - Beim Start steht im Protokoll: `[Route demo] aktiv: Modus mqtt, 6 Gerät(e)`.
+- Über die Route kann der Mandant **ihre** Geräte schalten ([Rückweg](#geräte-schalten-rückweg)).
 
 ## Heartbeat und Fernsteuerung
 
@@ -105,6 +106,48 @@ Standardmäßig aktiv (`monitor.enabled`), abschaltbar:
     wieder.
   - **Neu starten** endet mit Exit-Code 75, damit auch eine Unit mit `Restart=on-failure` neu
     startet; **Stoppen** endet mit 0 — die Box bleibt aus.
+
+## Geräte schalten (Rückweg)
+
+Seit 1.5 schaltet der Monitor Lampen, Steckdosen und Rollläden über den Proxy. Standardmäßig an,
+auf der Box ist nichts einzurichten (abschalten: `control.enabled: false`).
+
+```
+Monitor ──cmd/zb/<…>/<ieee>/set──▶ Proxy ──zigbee2mqtt/<gerät>/set──▶ zigbee2mqtt ──▶ Gerät
+   ▲                                 │                                                  │
+   └──────cmd/zb/<…>/<ieee>/ack──────┘◀──────── zigbee2mqtt/<gerät> {"state":"ON"} ──────┘
+```
+
+1. Der Monitor schickt z. B. `{"state":"ON","_id":"a1b2"}` an `cmd/zb/<kundennr>/<ieee>/set`.
+   `_id` ist Pflicht; sie geht nicht an zigbee2mqtt.
+2. Der Proxy abonniert `cmd/zb/#` über die Verbindung des Haupt-Upstreams und jeder Route. Der
+   Monitor stellt jeder Verbindung nur die Befehle ihres eigenen Mandanten zu und lässt nur
+   seinen eigenen Server Befehle schreiben — eine Kundennummer braucht der Proxy nicht.
+3. Der Proxy prüft: Gehört das Gerät zum Mandanten (Route: ihre `devices`), ist das Feld erlaubt
+   (`control.allow`, Vorgabe: Bedienfelder), kann das Gerät es laut zigbee2mqtt setzen, ist es
+   online, höchstens 10 Befehle je Minute.
+4. Er übersetzt die IEEE-Adresse in den Namen bei zigbee2mqtt und schickt `{"state":"ON"}` an
+   `zigbee2mqtt/<gerät>/set`.
+5. Die Quittung geht auf dasselbe Topic mit `/ack`:
+   - `{"id":"a1b2","result":"ok","state":{"state":"ON"}}` — erst, wenn das Gerät den Zustand meldet,
+   - `timeout` — keine passende Meldung binnen `control.timeout_s` (10 s), mit dem letzten Zustand,
+   - `rejected` mit `reason`: `device not allowed`, `field not allowed: …`,
+     `field not writable on this device: …`, `device unknown to zigbee2mqtt`, `device offline`,
+     `rate limit`, `zigbee2mqtt not reachable`, `missing _id`, `invalid payload: JSON object expected`,
+     `no fields to set`.
+
+**Der Proxy schaltet nie selbst** — keine Regeln, keine Zeitpläne. Befehle werden **nie
+gepuffert**: Ein gespeicherter (retained) Befehl wird verworfen, und was während eines Ausfalls
+geschickt wird, kommt nie verspätet an (Verbindung ohne gespeicherte Sitzung). Befehle, die
+lokal an zigbee2mqtt gehen (`…/set`, `…/get`, `bridge/request/…`, etwa von Home Assistant),
+gehen nicht an den Upstream.
+
+Im Protokoll: `[control demo] abonniert: cmd/zb/#`, je Befehl
+`[control demo] 0x… map[state:ON] → ok`. Lehnt der Monitor das Abo ab, steht dort
+`Abo cmd/zb/# vom Broker ABGELEHNT (0x87)`. In der Oberfläche zeigt der Tab **Filters** die Karte
+„Remote control" mit Umfang, Zählern und den letzten Befehlen (`/api/v1/control`).
+
+Einstellungen: [configuration.md › Rückweg](configuration.md#rückweg-geräte-aus-dem-monitor-schalten).
 
 ## Prüfen, dass alles ankommt
 

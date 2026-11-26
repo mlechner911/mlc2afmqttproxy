@@ -13,7 +13,11 @@ auf der eigenen Seite.
 Zigbee-Geräte → zigbee2mqtt → lokaler Broker des Proxys (:1884) → Puffer (BadgerDB, ./data)
                                                                       → Worker → Upstream
                                                                       → je Route: eigener Puffer → eigener Upstream
+Upstream (Monitor) → cmd/zb/…/set → Rückweg → zigbee2mqtt/<gerät>/set → Gerät, Quittung …/ack zurück
 ```
+
+- **Rückweg:** Befehle aus dem Monitor gehen ohne Puffer direkt an zigbee2mqtt; was nicht sofort
+  geht, wird abgelehnt ([Geräte schalten](mlc-sensor-monitor.md#geräte-schalten-rückweg)).
 
 - zigbee2mqtt (oder ein anderer MQTT-Client) **publiziert an den Proxy**, nicht direkt an den
   Upstream. In z2m: `mqtt.server: mqtt://<host-des-proxys>:1884`.
@@ -138,6 +142,10 @@ Neustart (oder ein Stromausfall).
   auf etwa einen je Sekunde gebremst.
 - **Ein vorgeschalteter Broker** (z. B. mosquitto mit `mqttbridge --bidi`) braucht dieselbe
   Sorgfalt: Was ihn erreicht, erreicht über die Bridge auch den Proxy.
+- **Rückweg:** Wer Befehle in den Zweig des Mandanten am Monitor schreiben kann, schaltet die
+  Bedienfelder aller Geräte dieses Mandanten — der Monitor lässt das nur seinen eigenen Server.
+  Einschränken auf einzelne Geräte: `control.allow: list` mit `control.devices`; ganz aus:
+  `control.enabled: false`. Einstellungen und Kalibrierung gehen nur mit `allow: writable`.
 - **Zum Upstream nur verschlüsselt**, sobald die Verbindung das Haus verlässt (`ssl://`/`wss://`
   bzw. `https://`).
 - Geprüft wird der Proxy bei jeder Version des MLC Sensor Monitor mit (`task edge:check`: vet,

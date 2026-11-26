@@ -95,15 +95,6 @@ mqtt:
       - "zigbee2mqtt/bridge/logging"
       - "zigbee2mqtt/bridge/state"
 
- # Downstream: Nachrichten vom Upstream-Broker an lokale Clients forwarden (optional).
- # Damit können z.B. Aktor-Commands aus der Cloud an lokale Geräte gesendet werden.
- # Der Proxy vermeidet Endlosschleifen durch "origin"-Marker im Nachrichten-Header.
- #downstream_config:
- #  subscribe_topics:
- #     - "cloud/commands/+"
- #  rewrite:
- #    match_prefix: "cloud/commands/zigbee2mqtt/"
- #    replace_with: "zigbee2mqtt/"
 
 http:
   # Upstream-Einstellungen (nur relevant wenn mode: "http")
@@ -137,7 +128,45 @@ routes:
     devices:                        # nur diese Geräte (friendly_name wie im Topic, oder IEEE)
       - "0x00158d0000000001"
     base_topic: "zigbee2mqtt"       # Standard
+    # control_allow: operate        # Rückweg dieser Route, wie control.allow; schaltet nur ihre devices
+    # control:                      # Felder je Gerät (bei list: die einzige Freigabe)
+    #   "0x00158d0000000001": [child_lock]
+
+# (Optional) Rückweg: der Sensor Monitor schaltet Geräte über den Proxy. Standardmäßig AN,
+# ohne Angaben nutzbar. Siehe „Rückweg" unten.
+control:
+  # enabled: true                  # false = Rückweg aus (auch für alle Routen)
+  # allow: operate                 # operate (Vorgabe) | writable | list
+  # devices:                       # Felder je Gerät: bei operate/writable zusätzlich, bei list allein
+  #   "0x00158d0000000001": [child_lock]
+  # broker: "tcp://127.0.0.1:1883" # nur, wenn zigbee2mqtt an einem ANDEREN Broker hängt
+  # username: ""                   # Zugang zu diesem Broker
+  # password: ""
+  # subscribe: "cmd/zb/#"          # Befehls-Abo am Upstream (Vorgabe)
+  # timeout_s: 10                  # so lange wartet die Quittung auf die Zustandsmeldung
+  # per_minute: 10                 # höchstens so viele Befehle je Gerät und Minute
 ```
+
+> `mqtt.downstream_config` gibt es seit 1.5 nicht mehr (es hat nie funktioniert) und wird mit
+> einer Warnung ignoriert. Der Weg vom Upstream zu den Geräten ist der Rückweg.
+
+### Rückweg: Geräte aus dem Monitor schalten
+
+- **Was schaltbar ist** (`allow`):
+  - `operate` (Vorgabe): an jedem Gerät des Mandanten die Bedienfelder `state`, `brightness`,
+    `color_temp`, `color`, `position`, `state_<kanal>`.
+  - `writable`: jedes Feld, das das Gerät selbst als setzbar meldet — auch Einstellungen und
+    Kalibrierung.
+  - `list`: nur Geräte und Felder aus `devices` (bei Routen `control`). **Nur so schränkt eine
+    Liste ein**; ohne `list` ergänzt sie nur Felder. Per Vorgabe schränkt der Rückweg nie ein.
+- **Welche Geräte:** beim Haupt-Upstream alle, die zigbee2mqtt kennt; bei einer Route nur ihre
+  `devices`. Neu angelernte Geräte sind ohne Neustart schaltbar. Welche davon tatsächlich
+  geschaltet werden, entscheidet der Monitor.
+- In jedem Modus lehnt der Proxy ab, was das Gerät nicht setzen kann, was offline oder unbekannt
+  ist und mehr als `per_minute` Befehle je Minute.
+- **Wohin die Befehle gehen:** ohne `broker` in den eigenen Broker (zigbee2mqtt hängt am Proxy);
+  mit `broker` an diesen, z. B. Mosquitto, an dem auch Home Assistant hängt.
+- Ablauf, Quittung und Ablehnungsgründe: [mlc-sensor-monitor.md › Geräte schalten](mlc-sensor-monitor.md#geräte-schalten-rückweg).
 
 ### Routen: mehrere Ziele von einem Standort
 
@@ -159,8 +188,8 @@ Mandanten: das vollständige Testlabor und eine Demo mit ausgewählten Geräten.
   die erste Liste eintrifft, greift die IEEE-Adresse nur, solange friendly_name und IEEE
   gleich sind (z2m-Standard). Ein Eintrag per Anzeigename gilt nur für genau diesen Namen —
   **IEEE ist deshalb der bessere Eintrag.**
-- **Nicht über Routen:** Downstream (Cloud → lokale Geräte) und die Fernsteuerung laufen nur
-  über den Haupt-Upstream. `pause`/`drain` aus der Fernsteuerung gelten für alle Worker.
+- **Rückweg je Route:** Jede Route nimmt über ihre eigene Verbindung Befehle für **ihre**
+  Geräte an. Die Fernsteuerung des Proxys (`cmd/svc/…`) läuft nur über den Haupt-Upstream. `pause`/`drain` aus der Fernsteuerung gelten für alle Worker.
 
 ## Architektur-Diagramm nach Betriebsart
 
@@ -170,7 +199,6 @@ Die Einstellung `mode` entscheidet darüber, über welchen Weg der Worker die Da
 graph TD
     subgraph Lokales Gateway
         Z[Zigbee2MQTT] -- "Publish (QoS 1)" --> M(Lokaler Broker\nPort 1884)
-        A[Aktor / Client] <--> M
         M -- "Store Hook" --> DB[(BadgerDB\n./data)]
         DB -- "FIFO Polling" --> W((Forward Worker))
         W --> C{Config: mode}
@@ -178,7 +206,8 @@ graph TD
 
     subgraph Cloud / Upstream
         C -- "mode: mqtt" --> F_MQTT[Paho MQTT Client]
-        F_MQTT -. "Downstream" .-> M
+        CB -. "Rückweg cmd/zb/…/set" .-> CTL[Rückweg\npkg/control]
+        CTL -. "zigbee2mqtt/…/set" .-> M
         F_MQTT -- "tcp://cloud-broker...:1883" --> CB[Cloud MQTT Broker]
         
         C -- "mode: http" --> F_HTTP[net/http Client]

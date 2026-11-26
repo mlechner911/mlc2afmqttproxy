@@ -82,6 +82,7 @@ routes:
 - With `devices`, **only** these devices go out via the route, plus a device list trimmed to them
   (`bridge/devices`); other `bridge/*` messages never.
 - At start the log shows: `[Route demo] aktiv: Modus mqtt, 6 Gerät(e)`.
+- Through the route the tenant can switch **its** devices ([return path](#switching-devices-return-path)).
 
 ## Heartbeat and remote control
 
@@ -102,6 +103,47 @@ On by default (`monitor.enabled`), can be switched off:
   - A stored (retained) command is not executed: it would come back on every restart.
   - **Restart** exits with code 75 so that a unit with `Restart=on-failure` restarts as well;
     **Stop** exits with 0 — the box stays off.
+
+## Switching devices (return path)
+
+Since 1.5 the monitor switches lights, plugs and blinds through the proxy. On by default, nothing
+to set up on the box (switch off: `control.enabled: false`).
+
+```
+Monitor ──cmd/zb/<…>/<ieee>/set──▶ Proxy ──zigbee2mqtt/<device>/set──▶ zigbee2mqtt ──▶ device
+   ▲                                 │                                                    │
+   └──────cmd/zb/<…>/<ieee>/ack──────┘◀──────── zigbee2mqtt/<device> {"state":"ON"} ───────┘
+```
+
+1. The monitor sends e.g. `{"state":"ON","_id":"a1b2"}` to `cmd/zb/<customer>/<ieee>/set`. `_id`
+   is required; it is not passed to zigbee2mqtt.
+2. The proxy subscribes to `cmd/zb/#` on the connection of the main upstream and of each route.
+   The monitor delivers to each connection only the commands of its own tenant and lets only its
+   own server write commands — the proxy needs no customer number.
+3. The proxy checks: does the device belong to the tenant (route: its `devices`), is the field
+   allowed (`control.allow`, default: controls), can the device set it according to
+   zigbee2mqtt, is it online, at most 10 commands per minute.
+4. It translates the IEEE address into the zigbee2mqtt name and sends `{"state":"ON"}` to
+   `zigbee2mqtt/<device>/set`.
+5. The acknowledgement goes to the same topic with `/ack`:
+   - `{"id":"a1b2","result":"ok","state":{"state":"ON"}}` — only once the device reports the state,
+   - `timeout` — no matching report within `control.timeout_s` (10 s), with the last state,
+   - `rejected` with `reason`: `device not allowed`, `field not allowed: …`,
+     `field not writable on this device: …`, `device unknown to zigbee2mqtt`, `device offline`,
+     `rate limit`, `zigbee2mqtt not reachable`, `missing _id`, `invalid payload: JSON object expected`,
+     `no fields to set`.
+
+**The proxy never switches by itself** — no rules, no schedules. Commands are **never
+buffered**: a stored (retained) command is dropped, and what is sent during an outage never
+arrives late (connection without a stored session). Commands that go to zigbee2mqtt locally
+(`…/set`, `…/get`, `bridge/request/…`, e.g. from Home Assistant) are not forwarded upstream.
+
+In the log: `[control demo] abonniert: cmd/zb/#`, per command `[control demo] 0x… map[state:ON] → ok`.
+If the monitor rejects the subscription it says `Abo cmd/zb/# vom Broker ABGELEHNT (0x87)`. In
+the UI the **Filters** tab shows the "Remote control" card with scope, counters and the latest
+commands (`/api/v1/control`).
+
+Settings: [configuration_en.md › Return path](configuration_en.md#return-path-switching-devices-from-the-monitor).
 
 ## Checking that everything arrives
 

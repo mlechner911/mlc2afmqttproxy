@@ -69,15 +69,8 @@ mqtt:
       - "homeassistant/"
       - "zigbee2mqtt/bridge/logging"
       - "zigbee2mqtt/bridge/state"
-    # Downstream: Nachrichten vom Upstream-Broker an lokale Clients forwarden (optional).
-    # Damit können z.B. Aktor-Commands aus der Cloud an lokale Geräte gesendet werden.
-    # Der Proxy vermeidet Endlosschleifen durch "origin"-Marker im Nachrichten-Header.
-    #downstream_config:
-    #  subscribe_topics:
-    #      - "cloud/commands/+"
-    #  rewrite:
-    #    match_prefix: "cloud/commands/zigbee2mqtt/"
-    #    replace_with: "zigbee2mqtt/"
+    # Befehle vom Upstream an die Geräte: Abschnitt control (Rückweg) am Ende der Datei.
+    # downstream_config gibt es seit 1.5 nicht mehr und wird ignoriert.
 
 # Fallback/alternativ (mode: http) — falls statt MQTT der HTTP-Ingest genutzt wird.
 http:

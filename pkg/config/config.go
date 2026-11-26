@@ -41,13 +41,25 @@ type Config struct {
 	Control *ControlConf `yaml:"control,omitempty"`
 }
 
-// ControlConf: Geräte aus dem MLC Sensor Monitor schalten (seit 1.5). Der Proxy schaltet nie
-// selbst — er reicht freigegebene Befehle von …/<ieee>/set (Abo Subscribe, Vorgabe cmd/zb/#) an
-// <base>/<gerät>/set weiter und quittiert auf demselben Topic mit /ack. Ohne Devices ist der
-// Rückweg aus.
+// ControlEnabled: Der Rückweg ist an, solange control.enabled nicht false ist.
+func (c *Config) ControlEnabled() bool {
+	return c.Control == nil || c.Control.Enabled == nil || *c.Control.Enabled
+}
+
+// ControlConf: Geräte aus dem MLC Sensor Monitor schalten (seit 1.5). Standardmäßig AN, ohne
+// Konfiguration (allow: operate): Der Monitor darf an jedem Gerät, das zigbee2mqtt kennt, die
+// Bedienfelder setzen (state, brightness, color_temp, color, position, state_<kanal>) — sofern das
+// Gerät sie als beschreibbar meldet. Welche Geräte tatsächlich geschaltet werden, entscheidet der
+// Monitor. Der Proxy schaltet nie selbst: Er reicht Befehle von …/<ieee>/set (Abo Subscribe,
+// Vorgabe cmd/zb/#) an <base>/<gerät>/set weiter und quittiert auf demselben Topic mit /ack.
 type ControlConf struct {
-	// Devices: IEEE-Adresse → Felder, die gesetzt werden dürfen (z. B. ["state"]). Gilt für den
-	// Haupt-Upstream; Routen haben ihre eigene Liste.
+	// Enabled: false schaltet den Rückweg ganz ab (auch für alle Routen). Fehlt = an.
+	Enabled *bool `yaml:"enabled,omitempty"`
+	// Allow: operate (Vorgabe: Bedienfelder + Liste) | writable (alles, was das Gerät als setzbar
+	// meldet, auch Einstellungen/Kalibrierung) | list (nur Devices). Gilt für den Haupt-Upstream.
+	Allow string `yaml:"allow,omitempty"`
+	// Devices: Felder je Gerät (IEEE → Felder). Bei operate/writable ZUSÄTZLICH, bei list die
+	// einzige Freigabe. Nur für den Haupt-Upstream; Routen haben routes[].control.
 	Devices map[string][]string `yaml:"devices,omitempty"`
 	// Subscribe: Topic-Filter für Befehle am Haupt-Upstream (Standard "cmd/zb/#"). Welche Befehle
 	// davon ankommen, entscheidet der Upstream (mlcmonit: nur der eigene Mandant).
@@ -89,8 +101,10 @@ type RouteConf struct {
 	CustomerNumber string `yaml:"customer_number,omitempty"`
 	// ControlSubscribe: Topic-Filter für Befehle über diese Route (Standard "cmd/zb/#").
 	ControlSubscribe string `yaml:"control_subscribe,omitempty"`
-	// Control: freigegebene Befehle für Geräte dieser Route (IEEE → Felder). Nur Geräte, die
-	// auch in Devices stehen (falls gesetzt). Leer = über diese Route wird nichts geschaltet.
+	// ControlAllow: wie control.allow, für diese Route (Vorgabe operate).
+	ControlAllow string `yaml:"control_allow,omitempty"`
+	// Control: Felder je Gerät dieser Route (IEEE → Felder), Bedeutung wie control.devices.
+	// Geschaltet werden über eine Route nur ihre Devices (leer = alle).
 	Control map[string][]string `yaml:"control,omitempty"`
 }
 

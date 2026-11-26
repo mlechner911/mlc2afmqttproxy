@@ -59,11 +59,8 @@ func TestParseRequest(t *testing.T) {
 }
 
 func TestPolicyCheck(t *testing.T) {
-	p := NewPolicy(map[string][]string{
-		"0xA4C138EEAAB187E0": {"state", "brightness"}, // Groß/klein egal; brightness kann die Steckdose nicht
-		"0xoffline":          {"state"},
-		"0xunknown":          {"state"},
-	}, lookup, 2)
+	// Ohne Konfiguration: Bedienfelder an allen Geräten; child_lock nur mit Zusatzfreigabe.
+	p := NewPolicy("", nil, nil, lookup, 2)
 	now := time.Now()
 	req := func(ieee string, f map[string]any) Request { return Request{IEEE: ieee, ID: "x", Fields: f} }
 	tests := []struct {
@@ -72,9 +69,8 @@ func TestPolicyCheck(t *testing.T) {
 		reason string
 	}{
 		{"ok", req(plug.IEEE, map[string]any{"state": "ON"}), ""},
-		{"nicht freigegeben", req("0x9999", map[string]any{"state": "ON"}), ReasonNotAllowed},
-		{"Feld nicht freigegeben", req(plug.IEEE, map[string]any{"child_lock": "LOCK"}), "field not allowed: child_lock"},
-		{"Feld freigegeben, Gerät kann es nicht", req(plug.IEEE, map[string]any{"brightness": 100}), "field not writable on this device: brightness"},
+		{"Einstellung ohne Freigabe", req(plug.IEEE, map[string]any{"child_lock": "LOCK"}), "field not allowed: child_lock"},
+		{"Bedienfeld, Gerät kann es nicht", req(plug.IEEE, map[string]any{"brightness": 100}), "field not writable on this device: brightness"},
 		{"z2m kennt es nicht", req("0xunknown", map[string]any{"state": "ON"}), ReasonUnknown},
 		{"offline", req("0xoffline", map[string]any{"state": "ON"}), ReasonOffline},
 		{"zweiter ok", req(plug.IEEE, map[string]any{"state": "OFF"}), ""},
@@ -91,6 +87,49 @@ func TestPolicyCheck(t *testing.T) {
 	}
 	if _, reason := p.Check(req(plug.IEEE, map[string]any{"state": "ON"}), now.Add(61*time.Second)); reason != "" {
 		t.Errorf("nach einer Minute wieder frei: %q", reason)
+	}
+}
+
+// TestPolicyScope: Route nur mit ihren Geräten; Zusatzfreigabe für eine Einstellung.
+func TestPolicyScope(t *testing.T) {
+	p := NewPolicy(AllowOperate, map[string][]string{"0xA4C138EEAAB187E0": {"child_lock"}}, []string{"0xA4C138EEAAB187E0"}, lookup, 10)
+	now := time.Now()
+	for _, tt := range []struct {
+		ieee   string
+		f      map[string]any
+		reason string
+	}{
+		{plug.IEEE, map[string]any{"child_lock": "LOCK"}, ""},
+		{plug.IEEE, map[string]any{"power_outage_memory": "on"}, "field not allowed: power_outage_memory"},
+		{"0xoffline", map[string]any{"state": "ON"}, ReasonNotAllowed}, // nicht in der Route
+	} {
+		if _, r := p.Check(Request{IEEE: tt.ieee, ID: "x", Fields: tt.f}, now); r != tt.reason {
+			t.Errorf("%s %v: %q, soll %q", tt.ieee, tt.f, r, tt.reason)
+		}
+	}
+	for f, ok := range map[string]bool{"state": true, "state_l2": true, "state_": false, "position": true, "child_lock": false, "local_temperature_calibration": false} {
+		if IsDefaultField(f) != ok {
+			t.Errorf("IsDefaultField(%q) = %v", f, !ok)
+		}
+	}
+}
+
+// TestPolicyModes: writable = alles Setzbare; list = nur die Liste, sonst nichts.
+func TestPolicyModes(t *testing.T) {
+	now := time.Now()
+	w := NewPolicy(AllowWritable, nil, nil, lookup, 10)
+	if _, r := w.Check(Request{IEEE: plug.IEEE, ID: "x", Fields: map[string]any{"power_outage_memory": "on"}}, now); r != "" {
+		t.Errorf("writable: %q", r)
+	}
+	if _, r := w.Check(Request{IEEE: plug.IEEE, ID: "x", Fields: map[string]any{"brightness": 10}}, now); r != "field not writable on this device: brightness" {
+		t.Errorf("writable, Gerät kann es nicht: %q", r)
+	}
+	l := NewPolicy(AllowList, map[string][]string{"0xoffline": {"state"}}, nil, lookup, 10)
+	if _, r := l.Check(Request{IEEE: plug.IEEE, ID: "x", Fields: map[string]any{"state": "ON"}}, now); r != ReasonNotAllowed {
+		t.Errorf("list, nicht gelistet: %q", r)
+	}
+	if _, r := l.Check(Request{IEEE: "0xoffline", ID: "x", Fields: map[string]any{"brightness": 1}}, now); r != "field not allowed: brightness" {
+		t.Errorf("list, Feld nicht gelistet: %q", r)
 	}
 }
 

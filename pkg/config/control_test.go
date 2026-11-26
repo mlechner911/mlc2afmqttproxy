@@ -11,6 +11,10 @@ func TestValidateControl(t *testing.T) {
 	}{
 		{"aus", "mode: mqtt\n", ""},
 		{"ok", "monitor:\n  customer_number: \"4111\"\ncontrol:\n  devices:\n    \"0xa4c138eeaab187e0\": [state]\n", ""},
+		{"nichts konfiguriert", "mode: mqtt\n", ""},
+		{"allow writable", "control:\n  allow: writable\n", ""},
+		{"allow kaputt", "control:\n  allow: all\n", "erlaubt sind"},
+		{"Route allow kaputt", "routes:\n  - name: demo\n    control_allow: alles\n", "erlaubt sind"},
 		{"ohne Kundennummer", "control:\n  devices:\n    \"0xa4c138eeaab187e0\": [state]\n", ""},
 		{"eigenes Abo", "control:\n  subscribe: \"cmd/zb/4111/+/set\"\n  devices:\n    \"0x01\": [state]\n", ""},
 		{"Abo # in der Mitte", "control:\n  subscribe: \"cmd/#/set\"\n  devices:\n    \"0x01\": [state]\n", "nur am Ende"},

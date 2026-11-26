@@ -63,15 +63,20 @@ const timeFmt = new Intl.DateTimeFormat('en-GB', { dateStyle: 'short', timeStyle
 function controlCard(ctl) {
     const card = el('div', { class: 'card mb-4 text-sm' }, el('h2', { class: 'card-title' }, 'Remote control (commands from the Sensor Monitor)'));
     if (!ctl || !ctl.enabled) {
-        card.append(el('p', {}, 'Off — no devices released in control: (config.yaml). The proxy never switches anything by itself.'));
+        card.append(el('p', {}, 'Off (control.enabled: false or no MQTT upstream). The proxy never switches anything by itself.'));
         return card;
     }
     card.append(el('p', { class: 'mb-2 text-slate-500 dark:text-slate-400' },
         `Commands go to zigbee2mqtt via ${ctl.direct ? 'the built-in broker' : 'control.broker'}. `
         + `Since start: ${['ok', 'rejected', 'timeout'].map((k) => `${fmtNum(ctl.counts[k] || 0)} ${k}`).join(' · ')}`));
+    const scope = (t) => {
+        const fields = { operate: `controls (${ctl.default_fields.join(', ')})`, writable: 'every field the device reports as settable', list: 'only the listed devices and fields' }[t.allow] || t.allow;
+        const devs = t.devices && t.devices.length ? `${t.devices.length} route device(s)` : 'all zigbee2mqtt devices';
+        const listed = Object.entries(t.listed || {}).map(([ieee, f]) => `${ieee} → ${f.join(', ')}`).join(' · ');
+        return `${devs}, ${fields}${listed ? `; listed: ${listed}` : ''}`;
+    };
     card.append(el('ul', { class: 'mb-3 space-y-1' }, ctl.tenants.map((t) => el('li', {},
-        el('b', {}, t.name), ` (${t.subscribe}): `,
-        Object.entries(t.allowed).map(([ieee, f]) => `${ieee} → ${f.join(', ')}`).join(' · ')))));
+        el('b', {}, t.name), ` (${t.subscribe}, allow ${t.allow}): `, scope(t)))));
     if (!ctl.recent.length) {
         card.append(el('p', { class: 'text-slate-500 dark:text-slate-400' }, 'No commands yet.'));
         return card;

@@ -8,7 +8,10 @@ import (
 // validateControl prüft die Freigaben des Rückwegs fail closed: Eine Freigabe, die nicht greifen
 // kann oder mehr erlaubt als gedacht, verhindert den Start, statt still ignoriert zu werden.
 func validateControl(cfg *Config) error {
-	if cfg.Control != nil && len(cfg.Control.Devices) > 0 {
+	if cfg.Control != nil {
+		if err := checkAllow("control.allow", cfg.Control.Allow); err != nil {
+			return err
+		}
 		if err := checkFilter("control.subscribe", cfg.Control.Subscribe); err != nil {
 			return err
 		}
@@ -17,8 +20,8 @@ func validateControl(cfg *Config) error {
 		}
 	}
 	for _, r := range cfg.Routes {
-		if len(r.Control) == 0 {
-			continue
+		if err := checkAllow("routes["+r.Name+"].control_allow", r.ControlAllow); err != nil {
+			return err
 		}
 		where := "routes[" + r.Name + "].control"
 		if err := checkFilter("routes["+r.Name+"].control_subscribe", r.ControlSubscribe); err != nil {
@@ -37,6 +40,15 @@ func validateControl(cfg *Config) error {
 		}
 	}
 	return nil
+}
+
+// checkAllow: leer, operate, writable oder list.
+func checkAllow(where, v string) error {
+	switch v {
+	case "", "operate", "writable", "list":
+		return nil
+	}
+	return fmt.Errorf("%s %q: erlaubt sind operate (Vorgabe), writable, list", where, v)
 }
 
 // checkFilter prüft einen Topic-Filter (leer = Vorgabe cmd/zb/#): # nur als letztes Segment,

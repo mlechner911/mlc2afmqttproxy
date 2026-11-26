@@ -22,13 +22,16 @@ func zigbeeBase(cfg *config.Config) string {
 	return devices.DefaultBaseTopic
 }
 
-// controlActive: Mindestens ein Mandant hat freigegebene Geräte.
+// controlActive: Rückweg an (Vorgabe) und mindestens ein MQTT-Upstream, über den Befehle kommen.
 func controlActive(cfg *config.Config) bool {
-	if cfg.Control != nil && len(cfg.Control.Devices) > 0 {
+	if !cfg.ControlEnabled() {
+		return false
+	}
+	if cfg.Mode == "mqtt" {
 		return true
 	}
 	for _, r := range cfg.Routes {
-		if len(r.Control) > 0 {
+		if r.Mode != "http" {
 			return true
 		}
 	}
@@ -71,10 +74,10 @@ func startControl(cfg *config.Config, devs *devices.Tracker, waiters *control.Wa
 	}
 	zb, closeZB := zigbeePort(ctx, cfg, cc, waiters, local)
 	base := zigbeeBase(cfg)
-	start := func(name, subscribe, server, clientID, user, pass string, allow map[string][]string) {
+	start := func(name, subscribe, server, clientID, user, pass, allow string, extra map[string][]string, only []string) {
 		t, err := control.StartTenant(ctx, control.TenantOpts{
 			Name: name, Subscribe: subscribe, Base: base, Server: server, ClientID: clientID,
-			Username: user, Password: pass, Allow: allow, Lookup: devs.ByIEEE,
+			Username: user, Password: pass, Allow: allow, Extra: extra, Only: only, Lookup: devs.ByIEEE,
 			PerMinute: cc.PerMinute, Timeout: time.Duration(cc.TimeoutS) * time.Second,
 			Zigbee: zb, Waiters: waiters, Journal: rt.journal,
 		})
@@ -84,16 +87,16 @@ func startControl(cfg *config.Config, devs *devices.Tracker, waiters *control.Wa
 		}
 		rt.tenants, rt.names = append(rt.tenants, t), append(rt.names, name)
 	}
-	if len(cc.Devices) > 0 && cfg.Mode == "mqtt" {
+	if cfg.Mode == "mqtt" {
 		start("main", cc.Subscribe, cfg.MQTT.Upstream, cfg.UpstreamClientID()+"-zb",
-			cfg.MQTT.Username, cfg.MQTT.Password, cc.Devices)
+			cfg.MQTT.Username, cfg.MQTT.Password, cc.Allow, cc.Devices, nil)
 	}
 	for _, r := range cfg.Routes {
-		if len(r.Control) == 0 || r.Mode == "http" {
+		if r.Mode == "http" {
 			continue
 		}
 		start(r.Name, r.ControlSubscribe, r.Upstream, cfg.UpstreamClientID()+"-route-"+r.Name+"-zb",
-			r.Username, r.Password, r.Control)
+			r.Username, r.Password, r.ControlAllow, r.Control, r.Devices)
 	}
 	rt.close = func() {
 		for _, t := range rt.tenants {
@@ -128,9 +131,11 @@ func (rt *controlRuntime) state() *web.ControlResponse {
 	if rt == nil {
 		return nil
 	}
-	out := &web.ControlResponse{Enabled: true, Direct: rt.direct, Counts: rt.journal.Counts(), Recent: rt.journal.Recent()}
+	out := &web.ControlResponse{Enabled: true, Direct: rt.direct, DefaultFields: control.DefaultFields, Counts: rt.journal.Counts(), Recent: rt.journal.Recent()}
 	for i, t := range rt.tenants {
-		out.Tenants = append(out.Tenants, web.ControlTenant{Name: rt.names[i], Subscribe: t.Subscribe(), Allowed: t.Allowed()})
+		extra, only := t.Scope()
+		out.Tenants = append(out.Tenants, web.ControlTenant{Name: rt.names[i], Subscribe: t.Subscribe(),
+			Allow: t.Allow(), Listed: extra, Devices: only})
 	}
 	return out
 }

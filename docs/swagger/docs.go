@@ -496,6 +496,13 @@ const docTemplate = `{
                         "format": "int64"
                     }
                 },
+                "default_fields": {
+                    "description": "DefaultFields: Bedienfelder im Modus operate (state, brightness, …).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "direct": {
                     "description": "Direct: Befehle über den eigenen Broker; sonst über control.broker (z. B. Mosquitto).",
                     "type": "boolean"
@@ -520,8 +527,20 @@ const docTemplate = `{
         "web.ControlTenant": {
             "type": "object",
             "properties": {
-                "allowed": {
-                    "description": "IEEE → Felder",
+                "allow": {
+                    "description": "Allow: operate (Bedienfelder + Liste) | writable (alles Setzbare) | list (nur die Liste).",
+                    "type": "string",
+                    "example": "operate"
+                },
+                "devices": {
+                    "description": "Devices: nur diese Geräte (Route); leer = alle, die zigbee2mqtt kennt.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "listed": {
+                    "description": "Listed: Felder je Gerät aus der Konfiguration (IEEE → Felder).",
                     "type": "object",
                     "additionalProperties": {
                         "type": "array",

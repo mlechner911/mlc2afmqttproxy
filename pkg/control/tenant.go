@@ -26,7 +26,9 @@ const DefaultSubscribe = "cmd/zb/#"
 type TenantOpts struct {
 	Name, Subscribe, Base                string
 	Server, ClientID, Username, Password string
-	Allow                                map[string][]string
+	Allow                                string              // operate (leer) | writable | list
+	Extra                                map[string][]string // Felder je Gerät aus der Liste
+	Only                                 []string            // nur diese Geräte (Route); leer = alle
 	Lookup                               func(ieee string) (devices.Device, bool)
 	PerMinute                            int
 	Timeout                              time.Duration
@@ -50,7 +52,7 @@ func StartTenant(ctx context.Context, o TenantOpts) (*Tenant, error) {
 	if o.Subscribe == "" {
 		o.Subscribe = DefaultSubscribe
 	}
-	t := &Tenant{o: o, policy: NewPolicy(o.Allow, o.Lookup, o.PerMinute)}
+	t := &Tenant{o: o, policy: NewPolicy(o.Allow, o.Extra, o.Only, o.Lookup, o.PerMinute)}
 	up, err := dial(ctx, connOpts{
 		name: o.Name, server: o.Server, clientID: o.ClientID, username: o.Username, password: o.Password,
 		subscribe: []string{o.Subscribe},
@@ -60,15 +62,28 @@ func StartTenant(ctx context.Context, o TenantOpts) (*Tenant, error) {
 		return nil, err
 	}
 	t.up = up
-	log.Printf("[control %s] aktiv: %d Gerät(e) freigegeben, Befehle auf %s", o.Name, len(o.Allow), o.Subscribe)
+	scope := "alle Geräte von zigbee2mqtt"
+	if len(o.Only) > 0 {
+		scope = fmt.Sprintf("%d Gerät(e) der Route", len(o.Only))
+	}
+	fields := map[string]string{
+		AllowOperate:  fmt.Sprintf("Bedienfelder %v", DefaultFields),
+		AllowWritable: "alle setzbaren Felder",
+		AllowList:     "nur die Liste",
+	}[t.policy.Mode()]
+	log.Printf("[control %s] aktiv (allow %s): %s, %s, %d Gerät(e) in der Liste, Befehle auf %s",
+		o.Name, t.policy.Mode(), scope, fields, len(o.Extra), o.Subscribe)
 	return t, nil
 }
 
 // Subscribe liefert das Befehls-Abo dieses Mandanten.
 func (t *Tenant) Subscribe() string { return t.o.Subscribe }
 
-// Allowed liefert die Freigabe dieses Mandanten.
-func (t *Tenant) Allowed() map[string][]string { return t.policy.Allowed() }
+// Allow liefert den Allow-Modus dieses Mandanten.
+func (t *Tenant) Allow() string { return t.policy.Mode() }
+
+// Scope liefert die Freigabe dieses Mandanten (Zusatzfelder, Geräteliste; nil = alle).
+func (t *Tenant) Scope() (map[string][]string, []string) { return t.policy.Scope() }
 
 // Close trennt die Upstream-Verbindung.
 func (t *Tenant) Close(ctx context.Context) { t.up.close(ctx) }

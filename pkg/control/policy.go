@@ -74,9 +74,35 @@ func ParseRequest(topic string, payload []byte) (Request, string) {
 	return req, ""
 }
 
-// Policy entscheidet, ob ein Befehl weitergereicht wird.
+// DefaultFields sind die Bedienfelder, die ohne Konfiguration schaltbar sind: an/aus, Helligkeit,
+// Farbe, Rollladenposition — dazu state_<kanal> mehrkanaliger Schalter (state_l1, …).
+// Einstellungen am Gerät (child_lock, power_outage_memory, Kalibrierung, Offsets …) gehören nicht
+// dazu und brauchen eine ausdrückliche Freigabe (control.devices bzw. routes[].control).
+var DefaultFields = []string{"state", "brightness", "color_temp", "color", "position"}
+
+// IsDefaultField: f ist ohne Konfiguration schaltbar.
+func IsDefaultField(f string) bool {
+	return contains(DefaultFields, f) || (strings.HasPrefix(f, "state_") && len(f) > len("state_"))
+}
+
+// Allow-Modi (control.allow bzw. routes[].control_allow).
+const (
+	// AllowOperate (Vorgabe): Bedienfelder an jedem Gerät, dazu die Zusatzfelder aus der Liste.
+	AllowOperate = "operate"
+	// AllowWritable: jedes Feld, das das Gerät selbst als setzbar meldet (auch Einstellungen,
+	// Kalibrierung) — für vorinstallierte Stationen, an denen der Monitor auch kalibriert.
+	AllowWritable = "writable"
+	// AllowList: nur Geräte und Felder aus der Liste (der strenge Weg, z. B. neben Home Assistant).
+	AllowList = "list"
+)
+
+// Policy entscheidet, ob ein Befehl weitergereicht wird. Was ein Mandant überhaupt schalten soll,
+// entscheidet der Monitor (nur der Server schreibt cmd/zb, nur in den Zweig des Mandanten); die
+// Policy begrenzt es auf Bedienfelder, auf Geräte der Route und auf das, was das Gerät kann.
 type Policy struct {
-	allow     map[string]map[string]bool // ieee (klein) → erlaubte Felder
+	mode      string
+	extra     map[string]map[string]bool // ieee (klein) → Felder aus der Liste
+	only      map[string]bool            // nil = alle Geräte; sonst nur diese (Route)
 	lookup    func(ieee string) (devices.Device, bool)
 	perMinute int
 
@@ -84,43 +110,65 @@ type Policy struct {
 	sent map[string][]time.Time // ieee → Zeitpunkte der letzten Minute
 }
 
-// NewPolicy baut die Freigabe aus der Konfiguration (IEEE → Felder).
-func NewPolicy(allow map[string][]string, lookup func(string) (devices.Device, bool), perMinute int) *Policy {
+// NewPolicy: mode = AllowOperate (leer) | AllowWritable | AllowList; extra = Felder je Gerät aus
+// der Liste (IEEE → Felder); only = die Geräte, die der Mandant schalten darf (leer = alle, die
+// zigbee2mqtt kennt).
+func NewPolicy(mode string, extra map[string][]string, only []string, lookup func(string) (devices.Device, bool), perMinute int) *Policy {
 	if perMinute <= 0 {
 		perMinute = 10
 	}
-	p := &Policy{allow: map[string]map[string]bool{}, lookup: lookup, perMinute: perMinute, sent: map[string][]time.Time{}}
-	for ieee, fields := range allow {
+	if mode == "" {
+		mode = AllowOperate
+	}
+	p := &Policy{mode: mode, extra: map[string]map[string]bool{}, lookup: lookup, perMinute: perMinute, sent: map[string][]time.Time{}}
+	for ieee, fields := range extra {
 		set := map[string]bool{}
 		for _, f := range fields {
 			set[f] = true
 		}
-		p.allow[strings.ToLower(ieee)] = set
+		p.extra[strings.ToLower(ieee)] = set
+	}
+	if len(only) > 0 {
+		p.only = map[string]bool{}
+		for _, ieee := range only {
+			p.only[strings.ToLower(ieee)] = true
+		}
 	}
 	return p
 }
 
-// Allowed liefert die Freigabe (IEEE → Felder, sortiert) für Anzeige und Heartbeat.
-func (p *Policy) Allowed() map[string][]string {
-	out := map[string][]string{}
-	for ieee, set := range p.allow {
+// Mode liefert den Allow-Modus.
+func (p *Policy) Mode() string { return p.mode }
+
+// Scope beschreibt die Freigabe für Anzeige: Felder je Gerät aus der Liste (sortiert) und die
+// Geräteliste (nil = alle).
+func (p *Policy) Scope() (extra map[string][]string, only []string) {
+	extra = map[string][]string{}
+	for ieee, set := range p.extra {
 		for f := range set {
-			out[ieee] = append(out[ieee], f)
+			extra[ieee] = append(extra[ieee], f)
 		}
-		sort.Strings(out[ieee])
+		sort.Strings(extra[ieee])
 	}
-	return out
+	for ieee := range p.only {
+		only = append(only, ieee)
+	}
+	sort.Strings(only)
+	return extra, only
 }
 
-// Check prüft Freigabe, Schreibbarkeit, Erreichbarkeit des Geräts und das Rate-Limit. Bei Erfolg
+// Check prüft Gerät, Felder, Schreibbarkeit, Erreichbarkeit und das Rate-Limit. Bei Erfolg
 // liefert es das Gerät (für den friendly_name im z2m-Topic) und zählt den Befehl.
 func (p *Policy) Check(req Request, now time.Time) (devices.Device, string) {
-	allowed, ok := p.allow[strings.ToLower(req.IEEE)]
-	if !ok {
+	ieee := strings.ToLower(req.IEEE)
+	if p.only != nil && !p.only[ieee] {
+		return devices.Device{}, ReasonNotAllowed
+	}
+	if _, listed := p.extra[ieee]; p.mode == AllowList && !listed {
 		return devices.Device{}, ReasonNotAllowed
 	}
 	for _, f := range sortedKeys(req.Fields) {
-		if !allowed[f] {
+		if !p.fieldAllowed(ieee, f) {
 			return devices.Device{}, reasonFieldPrefix + f
 		}
 	}
@@ -136,10 +184,24 @@ func (p *Policy) Check(req Request, now time.Time) (devices.Device, string) {
 	if dev.Availability == "offline" {
 		return devices.Device{}, ReasonOffline
 	}
-	if !p.take(strings.ToLower(req.IEEE), now) {
+	if !p.take(ieee, now) {
 		return devices.Device{}, ReasonRateLimit
 	}
 	return dev, ""
+}
+
+// fieldAllowed: Liste immer; Bedienfelder außer im Listen-Modus; im Modus writable alles (ob das
+// Gerät das Feld wirklich setzen kann, prüft Check danach für jeden Modus).
+func (p *Policy) fieldAllowed(ieee, f string) bool {
+	switch {
+	case p.extra[ieee][f]:
+		return true
+	case p.mode == AllowWritable:
+		return true
+	case p.mode == AllowOperate:
+		return IsDefaultField(f)
+	}
+	return false
 }
 
 // take zählt einen Befehl, wenn das Gerät in der letzten Minute weniger als perMinute hatte.

@@ -36,7 +36,7 @@ func TestTenantAckOnCommandTopic(t *testing.T) {
 		},
 	}
 	tn, err := StartTenant(ctx, TenantOpts{Name: "main", Base: "zigbee2mqtt", Server: url, ClientID: "box-zb",
-		Allow: map[string][]string{plug.IEEE: {"state"}}, Lookup: lookup, Timeout: 2 * time.Second,
+		Lookup: lookup, Timeout: 2 * time.Second,
 		Zigbee: zb, Waiters: w, Journal: j})
 	if err != nil {
 		t.Fatal(err)

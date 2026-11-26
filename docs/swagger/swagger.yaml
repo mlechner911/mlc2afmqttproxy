@@ -137,6 +137,12 @@ definitions:
           format: int64
           type: integer
         type: object
+      default_fields:
+        description: 'DefaultFields: Bedienfelder im Modus operate (state, brightness,
+          …).'
+        items:
+          type: string
+        type: array
       direct:
         description: 'Direct: Befehle über den eigenen Broker; sonst über control.broker
           (z. B. Mosquitto).'
@@ -154,12 +160,23 @@ definitions:
     type: object
   web.ControlTenant:
     properties:
-      allowed:
+      allow:
+        description: 'Allow: operate (Bedienfelder + Liste) | writable (alles Setzbare)
+          | list (nur die Liste).'
+        example: operate
+        type: string
+      devices:
+        description: 'Devices: nur diese Geräte (Route); leer = alle, die zigbee2mqtt
+          kennt.'
+        items:
+          type: string
+        type: array
+      listed:
         additionalProperties:
           items:
             type: string
           type: array
-        description: IEEE → Felder
+        description: 'Listed: Felder je Gerät aus der Konfiguration (IEEE → Felder).'
         type: object
       name:
         example: main

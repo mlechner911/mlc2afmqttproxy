@@ -143,3 +143,23 @@ monitor:
 #      - "0x00158d0000000001"
 #      - "Wohnzimmer Temperatur"
 
+#    # Rückweg über diese Route: nur ihre devices; control_allow wie control.allow unten.
+#    control_allow: operate
+#    control:
+#      "0x00158d0000000001": [child_lock]
+
+# Rückweg (seit 1.5): der Sensor Monitor schaltet Geräte über den Proxy. Standardmäßig AN, ohne
+# Konfiguration nötig. Der Proxy schaltet nie selbst, puffert keine Befehle und quittiert auf
+# …/ack erst, wenn das Gerät den neuen Zustand meldet. Welche Geräte geschaltet werden, entscheidet
+# der Monitor; der Proxy begrenzt es auf das, was hier erlaubt ist UND was das Gerät setzen kann.
+#control:
+#  enabled: true                 # false = Rückweg aus
+#  allow: operate                # operate: state, brightness, color_temp, color, position, state_<kanal>
+#                                # writable: alles, was das Gerät als setzbar meldet (auch Kalibrierung)
+#                                # list: nur die devices-Liste unten (strenger Weg)
+#  devices:                      # Felder je Gerät: bei operate/writable zusätzlich, bei list allein
+#    "0x00158d0000000001": [child_lock]
+#  broker: "tcp://127.0.0.1:1883"  # nur wenn zigbee2mqtt NICHT am Proxy-Broker hängt (z. B. Mosquitto)
+#  subscribe: "cmd/zb/#"         # Befehls-Abo am Upstream (Vorgabe)
+#  timeout_s: 10                 # Wartezeit auf die Zustandsmeldung
+#  per_minute: 10                # höchstens so viele Befehle je Gerät und Minute

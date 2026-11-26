@@ -9,6 +9,7 @@ let socket = null;
 let rxBuffer = new Uint8Array(0);
 let pingTimer = null;
 let renderPending = false;
+let dirty = false; // Daten geändert, während der Tab unsichtbar war
 let container, badge;
 
 const BADGE = {
@@ -23,6 +24,11 @@ export function initLive() {
         for (const k in treeData) delete treeData[k];
         showWaiting();
     });
+}
+
+// showLive zeichnet nach, was sich ändert, während der Tab nicht sichtbar war.
+export function showLive() {
+    if (dirty) requestAnimationFrame(renderTree);
 }
 
 // startLive verbindet einmal; danach hält sich die Verbindung selbst (Wiederverbinden nach 5 s).
@@ -158,6 +164,33 @@ function valueNode(val) {
     return span('node-val-string', String(val));
 }
 
+// Gebaut werden nur aufgeklappte Zweige, und je Knoten höchstens MAX_CHILDREN Kinder. Bis
+// 26.11.2026 entstand bei jeder Nachricht der GANZE Baum neu — mit bridge/definitions und
+// bridge/devices von zigbee2mqtt rund 118 000 DOM-Knoten, bis zu 460 ms je Durchlauf: Die Seite
+// reagierte nicht mehr, auch im Statistik-Tab (die Live-Verbindung blieb offen).
+const MAX_CHILDREN = 200;
+const shownLimit = new Map(); // Pfad → aufgedeckte Kinder („… more“)
+
+function fillChildren(kids, val, p) {
+    const entries = Object.entries(val);
+    const limit = shownLimit.get(p) || MAX_CHILDREN;
+    const frag = document.createDocumentFragment();
+    for (const [k, v] of entries.slice(0, limit)) frag.appendChild(createNode(k, v, p));
+    if (entries.length > limit) {
+        const more = document.createElement('button');
+        more.className = 'ml-6 py-0.5 text-sky-600 hover:underline dark:text-sky-400';
+        more.textContent = `… ${entries.length - limit} more`;
+        more.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            shownLimit.set(p, limit + MAX_CHILDREN);
+            kids.replaceChildren();
+            fillChildren(kids, val, p);
+        });
+        frag.appendChild(more);
+    }
+    kids.replaceChildren(frag);
+}
+
 function createNode(key, val, path) {
     const isObj = val !== null && typeof val === 'object';
     const hasChildren = isObj && Object.keys(val).length > 0;
@@ -168,9 +201,16 @@ function createNode(key, val, path) {
     const head = document.createElement('div');
     head.className = 'tree-node-header';
     head.addEventListener('click', () => {
-        const nowOpen = head.nextElementSibling.classList.toggle('open');
+        const kids = head.nextElementSibling;
+        const nowOpen = kids.classList.toggle('open');
         head.querySelector('.toggle-icon').classList.toggle('open');
-        if (nowOpen) openPaths.add(p); else openPaths.delete(p);
+        if (nowOpen) {
+            openPaths.add(p);
+            if (hasChildren && !kids.hasChildNodes()) fillChildren(kids, val, p);
+        } else {
+            openPaths.delete(p);
+            kids.replaceChildren(); // zugeklappt: nichts im DOM halten
+        }
     });
     head.append(icon(hasChildren, open), span('node-key', key));
     if (!isObj) {
@@ -180,13 +220,15 @@ function createNode(key, val, path) {
     }
     const kids = document.createElement('div');
     kids.className = 'node-children' + (open ? ' open' : '');
-    if (hasChildren) for (const [k, v] of Object.entries(val)) kids.appendChild(createNode(k, v, p));
+    if (hasChildren && open) fillChildren(kids, val, p);
     node.append(head, kids);
     return node;
 }
 
 function renderTree() {
     if (Object.keys(treeData).length === 0) return;
+    if (container.offsetParent === null) { dirty = true; return; } // Tab unsichtbar: beim Zeigen
+    dirty = false;
     const frag = document.createDocumentFragment();
     for (const [k, v] of Object.entries(treeData)) frag.appendChild(createNode(k, v, ''));
     container.replaceChildren(frag);

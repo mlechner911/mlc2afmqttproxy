@@ -5,7 +5,7 @@ import { API, getJSON, postJSON, fmtNum, fmtAge, fmtDuration, STATES } from './a
 import { initStats, loadStats, setAuth } from './stats.js';
 import { initInterruptions, loadInterruptions } from './interruptions.js';
 import { loadFilters } from './filters.js';
-import { initLive, startLive } from './live.js';
+import { initLive, startLive, showLive } from './live.js';
 import { redrawAll } from './charts.js';
 
 const TABS = ['stats', 'interruptions', 'filters', 'live'];
@@ -59,7 +59,7 @@ function selectTab(name) {
     if (name === 'stats') redrawAll();
     else if (name === 'interruptions') loadInterruptions();
     else if (name === 'filters') loadFilters(status?.uptime_s);
-    else if (name === 'live') startLive();
+    else if (name === 'live') { startLive(); showLive(); }
 }
 
 async function login(ev) {

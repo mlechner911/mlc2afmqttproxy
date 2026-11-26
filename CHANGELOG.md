@@ -2,6 +2,11 @@
 
 One line per change. Background, measurements and ticket references: release notes in the project's Doc Hub (`releases/<version>.md`).
 
+## [1.3.1] - 2026-11-26
+
+### Fixed
+- The dashboard froze: the live tree rebuilt every node, about 118,000 with zigbee2mqtt's bridge topics, on each message, even while hidden.
+
 ## [1.3.0] - 2026-11-25
 
 ### Changed

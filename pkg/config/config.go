@@ -55,11 +55,12 @@ func (c *Config) ControlEnabled() bool {
 type ControlConf struct {
 	// Enabled: false schaltet den Rückweg ganz ab (auch für alle Routen). Fehlt = an.
 	Enabled *bool `yaml:"enabled,omitempty"`
-	// Allow: operate (Vorgabe: Bedienfelder + Liste) | writable (alles, was das Gerät als setzbar
-	// meldet, auch Einstellungen/Kalibrierung) | list (nur Devices). Gilt für den Haupt-Upstream.
+	// Allow: operate (Bedienfelder) | writable (alles, was das Gerät als setzbar meldet, auch
+	// Einstellungen/Kalibrierung) | list (nur Devices). Fehlt es: list, wenn Devices gesetzt ist
+	// (fail closed), sonst operate. Gilt für den Haupt-Upstream.
 	Allow string `yaml:"allow,omitempty"`
-	// Devices: Felder je Gerät (IEEE → Felder). Bei operate/writable ZUSÄTZLICH, bei list die
-	// einzige Freigabe. Nur für den Haupt-Upstream; Routen haben routes[].control.
+	// Devices: Felder je Gerät (IEEE → Felder). Bei list die einzige Freigabe; bei ausdrücklich
+	// operate/writable nur ZUSÄTZLICHE Felder. Nur für den Haupt-Upstream; Routen haben routes[].control.
 	Devices map[string][]string `yaml:"devices,omitempty"`
 	// Subscribe: Topic-Filter für Befehle am Haupt-Upstream (Standard "cmd/zb/#"). Welche Befehle
 	// davon ankommen, entscheidet der Upstream (mlcmonit: nur der eigene Mandant).
@@ -101,7 +102,7 @@ type RouteConf struct {
 	CustomerNumber string `yaml:"customer_number,omitempty"`
 	// ControlSubscribe: Topic-Filter für Befehle über diese Route (Standard "cmd/zb/#").
 	ControlSubscribe string `yaml:"control_subscribe,omitempty"`
-	// ControlAllow: wie control.allow, für diese Route (Vorgabe operate).
+	// ControlAllow: wie control.allow, für diese Route (fehlt: list, wenn Control gesetzt, sonst operate).
 	ControlAllow string `yaml:"control_allow,omitempty"`
 	// Control: Felder je Gerät dieser Route (IEEE → Felder), Bedeutung wie control.devices.
 	// Geschaltet werden über eine Route nur ihre Devices (leer = alle).

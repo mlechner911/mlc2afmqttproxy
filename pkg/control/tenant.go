@@ -73,6 +73,9 @@ func StartTenant(ctx context.Context, o TenantOpts) (*Tenant, error) {
 	}[t.policy.Mode()]
 	log.Printf("[control %s] aktiv (allow %s): %s, %s, %d Gerät(e) in der Liste, Befehle auf %s",
 		o.Name, t.policy.Mode(), scope, fields, len(o.Extra), o.Subscribe)
+	if len(o.Extra) > 0 && t.policy.Mode() != AllowList {
+		log.Printf("[control %s] ACHTUNG: allow %s — die Liste ergänzt nur Felder, sie schränkt die Geräte NICHT ein", o.Name, t.policy.Mode())
+	}
 	return t, nil
 }
 

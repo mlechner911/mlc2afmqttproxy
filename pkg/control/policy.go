@@ -87,12 +87,14 @@ func IsDefaultField(f string) bool {
 
 // Allow-Modi (control.allow bzw. routes[].control_allow).
 const (
-	// AllowOperate (Vorgabe): Bedienfelder an jedem Gerät, dazu die Zusatzfelder aus der Liste.
+	// AllowOperate (Vorgabe ohne Liste): Bedienfelder an jedem Gerät; ausdrücklich gesetzt ergänzt
+	// eine Liste nur Felder.
 	AllowOperate = "operate"
 	// AllowWritable: jedes Feld, das das Gerät selbst als setzbar meldet (auch Einstellungen,
 	// Kalibrierung) — für vorinstallierte Stationen, an denen der Monitor auch kalibriert.
 	AllowWritable = "writable"
 	// AllowList: nur Geräte und Felder aus der Liste (der strenge Weg, z. B. neben Home Assistant).
+	// Vorgabe, sobald eine Liste gesetzt ist und kein Modus.
 	AllowList = "list"
 )
 
@@ -110,7 +112,7 @@ type Policy struct {
 	sent map[string][]time.Time // ieee → Zeitpunkte der letzten Minute
 }
 
-// NewPolicy: mode = AllowOperate (leer) | AllowWritable | AllowList; extra = Felder je Gerät aus
+// NewPolicy: mode = AllowOperate | AllowWritable | AllowList; leer = operate ohne Liste, list mit; extra = Felder je Gerät aus
 // der Liste (IEEE → Felder); only = die Geräte, die der Mandant schalten darf (leer = alle, die
 // zigbee2mqtt kennt).
 func NewPolicy(mode string, extra map[string][]string, only []string, lookup func(string) (devices.Device, bool), perMinute int) *Policy {
@@ -118,7 +120,12 @@ func NewPolicy(mode string, extra map[string][]string, only []string, lookup fun
 		perMinute = 10
 	}
 	if mode == "" {
+		// Fail closed: Eine vorhandene Liste ohne ausdrücklichen Modus schränkt ein (so war sie vor
+		// 1.5 gemeint). Ein Update darf eine bestehende Freigabe nie still erweitern.
 		mode = AllowOperate
+		if len(extra) > 0 {
+			mode = AllowList
+		}
 	}
 	p := &Policy{mode: mode, extra: map[string]map[string]bool{}, lookup: lookup, perMinute: perMinute, sent: map[string][]time.Time{}}
 	for ieee, fields := range extra {

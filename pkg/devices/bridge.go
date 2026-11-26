@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 // bridgeDevice ist ein Eintrag aus <base>/bridge/devices (nur die gebrauchten Felder).
@@ -15,10 +16,43 @@ type bridgeDevice struct {
 	Type         string `json:"type"`
 	PowerSource  string `json:"power_source"`
 	Definition   *struct {
-		Model       string `json:"model"`
-		Vendor      string `json:"vendor"`
-		Description string `json:"description"`
+		Model       string   `json:"model"`
+		Vendor      string   `json:"vendor"`
+		Description string   `json:"description"`
+		Exposes     []expose `json:"exposes"`
 	} `json:"definition"`
+}
+
+// expose ist ein Merkmal aus der z2m-Gerätedefinition; zusammengesetzte (light, switch …) tragen
+// ihre Teile in Features.
+type expose struct {
+	Property string   `json:"property"`
+	Access   int      `json:"access"`
+	Features []expose `json:"features"`
+}
+
+// accessSet ist das Bit „per /set schreibbar“ in exposes.access (z2m: 1 state, 2 set, 4 get).
+const accessSet = 2
+
+// writable sammelt die per /set schreibbaren Eigenschaften, sortiert und ohne Doppelte.
+func writable(ex []expose) []string {
+	seen := map[string]bool{}
+	var walk func([]expose)
+	walk = func(list []expose) {
+		for _, e := range list {
+			walk(e.Features)
+			if e.Property != "" && e.Access&accessSet != 0 {
+				seen[e.Property] = true
+			}
+		}
+	}
+	walk(ex)
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // setBridgeDevices übernimmt die Geräteliste von zigbee2mqtt. Geräte, die nicht mehr darin
@@ -42,6 +76,7 @@ func (t *Tracker) setBridgeDevices(payload []byte) {
 		d.IEEE, d.Type, d.PowerSource, d.Known = b.IEEE, b.Type, b.PowerSource, true
 		if b.Definition != nil {
 			d.Model, d.Vendor, d.Description = b.Definition.Model, b.Definition.Vendor, b.Definition.Description
+			d.Writable = writable(b.Definition.Exposes)
 		}
 		next[b.FriendlyName] = d
 	}

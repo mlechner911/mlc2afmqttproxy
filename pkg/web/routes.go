@@ -52,6 +52,9 @@ func registerRoutes(r *gin.Engine, cfg *config.Config, store *storage.Store, svc
 
 	protected.GET("/config", GetConfigHandler(cfg, startTime))
 	protected.GET(api+"/filters", GetFiltersHandler(cfg))
+	if svc.Control != nil {
+		protected.GET(api+"/control", GetControlHandler(svc.Control))
+	}
 	protected.GET("/mqtt", liveTunnel(cfg))
 }
 

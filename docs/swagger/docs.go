@@ -15,6 +15,35 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/v1/control": {
+            "get": {
+                "description": "Freigegebene Geräte je Mandant, Ergebnisse seit dem Start, die letzten 200 Befehle. Nur angemeldet.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Control"
+                ],
+                "summary": "Rückweg (Befehle aus dem Monitor)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/web.ControlResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/devices": {
             "get": {
                 "description": "Geräte aus zigbee2mqtt mit Nachrichten heute/7/30 Tage, mittlerem Sendeabstand und Status (ok, silent, offline, unknown).",
@@ -262,6 +291,36 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "control.Entry": {
+            "type": "object",
+            "properties": {
+                "device": {
+                    "type": "string"
+                },
+                "fields": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ieee": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "result": {
+                    "type": "string"
+                },
+                "tenant": {
+                    "type": "string"
+                },
+                "time": {
+                    "type": "string"
+                }
+            }
+        },
         "history.Day": {
             "type": "object",
             "properties": {
@@ -427,6 +486,59 @@ const docTemplate = `{
                 }
             }
         },
+        "web.ControlResponse": {
+            "type": "object",
+            "properties": {
+                "counts": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                },
+                "direct": {
+                    "description": "Direct: Befehle über den eigenen Broker; sonst über control.broker (z. B. Mosquitto).",
+                    "type": "boolean"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "recent": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/control.Entry"
+                    }
+                },
+                "tenants": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/web.ControlTenant"
+                    }
+                }
+            }
+        },
+        "web.ControlTenant": {
+            "type": "object",
+            "properties": {
+                "allowed": {
+                    "description": "IEEE → Felder",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "customer": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "main"
+                }
+            }
+        },
         "web.DeviceHistoryResponse": {
             "type": "object",
             "properties": {
@@ -500,6 +612,13 @@ const docTemplate = `{
                 },
                 "vendor": {
                     "type": "string"
+                },
+                "writable": {
+                    "description": "Writable: per \u003cname\u003e/set schreibbare Eigenschaften laut z2m-Definition (exposes).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -652,6 +771,10 @@ const docTemplate = `{
             "properties": {
                 "buffer_count": {
                     "description": "Die aktuelle Anzahl der in BadgerDB zwischengespeicherten Nachrichten.",
+                    "type": "integer"
+                },
+                "commands_skipped_total": {
+                    "description": "Befehle an zigbee2mqtt (…/set, …/get, bridge/request) — keine Messwerte, nicht weitergeleitet.",
                     "type": "integer"
                 },
                 "messages_dead_lettered_total": {

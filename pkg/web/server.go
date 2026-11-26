@@ -105,6 +105,8 @@ type Services struct {
 	Devices *devices.Tracker
 	// Status liefert den Kurzstatus (Zustand, Puffer, Verbindungen); nil = ohne /status.
 	Status func() Status
+	// Control liefert den Stand des Rückwegs; nil = ohne /control.
+	Control func() *ControlResponse
 }
 
 // StartServer initialisiert den Diagnose-Webserver.

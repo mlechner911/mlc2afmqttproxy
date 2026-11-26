@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"mlc2afmqttproxy/pkg/broker"
+	"mlc2afmqttproxy/pkg/control"
 	"mlc2afmqttproxy/pkg/config"
 	"mlc2afmqttproxy/pkg/forwarder"
 	"mlc2afmqttproxy/pkg/storage"
@@ -97,24 +98,6 @@ func run() int {
 			cs.SetClientID(cfg.UpstreamClientID())
 		}
 		log.Printf("Client-ID am Upstream: %s", cfg.UpstreamClientID())
-
-		// Downstream: Topics + Rewrite VOR Connect konfigurieren
-		if cfg.MQTT.Downstream != nil && len(cfg.MQTT.Downstream.SubscribeTopics) > 0 {
-			// Rewrite zuerst setzen (wird im handlePublishReceived gebraucht)
-			if cfg.MQTT.Downstream.Rewrite != nil {
-				mqttfwd, ok := fwd.(interface{ SetDownRewrite(*config.TopicRewriteConf) })
-				if ok {
-					mqttfwd.SetDownRewrite(cfg.MQTT.Downstream.Rewrite)
-					log.Printf("[Downstream] Topic Rewrite: %s → %s", cfg.MQTT.Downstream.Rewrite.MatchPrefix, cfg.MQTT.Downstream.Rewrite.ReplaceWith)
-				}
-			}
-			// Topics registrieren (Handler kommt später nach Mochi-Setup)
-			if err := fwd.Subscribe(cfg.MQTT.Downstream.SubscribeTopics, nil); err != nil {
-				log.Printf("[Downstream] Subscribe-Konfiguration fehlgeschlagen: %v", err)
-			} else {
-				log.Printf("[Downstream] Topics registriert: %d (Handler wird nach Mochi-Setup gesetzt)", len(cfg.MQTT.Downstream.SubscribeTopics))
-			}
-		}
 	}
 
 	// 3b. Zusätzliche Routen: je Route eigener Puffer, Forwarder und Worker (config.Routes).
@@ -126,6 +109,14 @@ func run() int {
 	// 3c. Verlaufs- und Gerätestatistik (läuft ab Schritt 9); der Gerätebeobachter hängt am Broker.
 	hist := openHistory(cfg)
 	devs := openDevices(cfg, hist)
+	// Beobachter am Broker: Gerätestatistik und — für den Rückweg — die Zustandsmeldungen, auf
+	// die eine Quittung wartet.
+	waiters := control.NewWaiters(zigbeeBase(cfg))
+	broker.SetObserver(func(topic string, payload []byte, at time.Time) {
+		devs.Observe(topic, payload, at)
+		waiters.Observe(topic, payload)
+	})
+	prepareControl(cfg)
 
 	// 4. Mochi MQTT Broker starten
 	log.Printf("Lokal-Broker lauscht auf TCP :%d und WebSocket :%d", cfg.MQTT.LocalPort, cfg.MQTT.WsPort)
@@ -141,35 +132,25 @@ func run() int {
 
 	paused := func() bool { return false }
 
+	var ctl atomic.Pointer[controlRuntime] // Rückweg; startet in Schritt 9, die API liest ihn nebenläufig
+
 	// 6. Diagnose-Webserver und Live-Dashboard auf dem konfigurierten Port starten
 	var srv *http.Server
 	if cfg.Server.Enable {
 		log.Printf("Webserver lauscht auf Port %d mit API-Präfix '%s'", cfg.Server.Port, cfg.Server.APIPrefix)
 		srv = web.StartServer(cfg, db, web.Services{History: hist, Devices: devs,
-			Status: statusFunc(cfg, db, fwd, fwWorker, &mochiBroker, &paused, startTime)}, Version, startTime)
+			Status:  statusFunc(cfg, db, fwd, fwWorker, &mochiBroker, &paused, startTime),
+			Control: func() *web.ControlResponse { return ctl.Load().state() }}, Version, startTime)
 	} else {
 		log.Println("Diagnose-Webserver ist deaktiviert (server.enable = false).")
 	}
 
-	// 7. Downstream-Handler setzen (nach Mochi-Broker-Setup)
-	//
-	// P3-15 (Sicherheitsprüfung 07.11.2026): Dieser Weg ist WIRKUNGSLOS — mochiBroker.Publish
-	// erreicht keinen lokalen Client: Der Broker läuft ohne InlineClient (pkg/broker/mochi.go, mqtt.Options). So soll es
-	// bleiben, bis zwei Dinge gebaut sind, sonst wird er zur Fernsteuerung der Box:
-	//   1. eine Allowlist lokaler Ziel-Topics — nie „…/set" (Geräte schalten) und nie
-	//      „bridge/request" (zigbee2mqtt verwalten);
-	//   2. Inline-Nachrichten nicht puffern — sonst gingen sie als „Messwerte" wieder nach oben.
-	// Wer den InlineClient einschaltet, baut beides zuerst (Ticket T-SENS-20261107-02.6).
-	if cfg.MQTT.Downstream != nil && len(cfg.MQTT.Downstream.SubscribeTopics) > 0 && cfg.Mode == "mqtt" {
-		downstreamHandler := func(topic string, payload []byte) {
-			if err := mochiBroker.Publish(topic, payload, false, 1); err != nil {
-				log.Printf("[Downstream] Publish an lokalen Broker fehlgeschlagen: %v", err)
-			} else {
-				log.Printf("[Downstream] Forwarded an lokale Clients: Topic='%s', %d bytes", topic, len(payload))
-			}
-		}
-		fwd.SetDownstreamHandler(downstreamHandler)
-		log.Printf("[Downstream] Handler aktiv — Cloud → lokale Clients")
+	// 7. Die alte downstream_config (Cloud → beliebige lokale Topics, ohne Prüfung) ist seit 1.5
+	// ersetzt durch control: (Freigabeliste, Abgleich mit exposes, Quittung). Sie war ohnehin
+	// wirkungslos (kein InlineClient, Befund P3-15); mit dem InlineClient für den Direktbetrieb
+	// würde sie zur offenen Fernsteuerung der Box — deshalb wird sie nicht mehr verdrahtet.
+	if cfg.MQTT.Downstream != nil && len(cfg.MQTT.Downstream.SubscribeTopics) > 0 {
+		log.Printf("WARNUNG: mqtt.downstream_config wird ignoriert — Befehle aus dem Monitor laufen über control: (siehe docs/betrieb.md)")
 	}
 
 	// --- Graceful Shutdown Setup ---
@@ -231,6 +212,10 @@ func run() int {
 		defer rw.Stop()
 	}
 	stopHistory := startHistory(hist, sampler(db, fwd, fwWorker, devs, &paused))
+	if rt := startControl(cfg, devs, waiters, mochiBroker); rt != nil {
+		ctl.Store(rt)
+		defer rt.close()
+	}
 
 	sig := <-quit
 	log.Printf("Signal %v empfangen. Beende Proxy geordnet (Graceful Shutdown)...", sig)

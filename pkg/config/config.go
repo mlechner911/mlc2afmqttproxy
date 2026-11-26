@@ -36,6 +36,27 @@ type Config struct {
 	// Filter, optional eigener Geräteliste — und eigenem Puffer + Worker, damit ein
 	// unerreichbares Ziel die anderen nicht aufhält. Leer = Verhalten wie bisher.
 	Routes []RouteConf `yaml:"routes,omitempty"`
+
+	// Control ist der Rückweg: freigegebene Befehle vom Monitor an zigbee2mqtt (siehe ControlConf).
+	Control *ControlConf `yaml:"control,omitempty"`
+}
+
+// ControlConf: Geräte aus dem MLC Sensor Monitor schalten (seit 1.5). Der Proxy schaltet nie
+// selbst — er reicht freigegebene Befehle von cmd/zb/<kundennummer>/<ieee>/set an
+// <base>/<gerät>/set weiter und quittiert auf …/ack. Ohne Devices ist der Rückweg aus.
+type ControlConf struct {
+	// Devices: IEEE-Adresse → Felder, die gesetzt werden dürfen (z. B. ["state"]). Gilt für den
+	// Haupt-Mandanten (monitor.customer_number); Routen haben ihre eigene Liste.
+	Devices map[string][]string `yaml:"devices,omitempty"`
+	// Broker, an dem zigbee2mqtt hängt. Leer = der eigene Broker (Direktbetrieb); sonst z. B.
+	// "tcp://127.0.0.1:1883" (zigbee2mqtt an Mosquitto, Proxy über die mqttbridge).
+	Broker   string `yaml:"broker,omitempty"`
+	Username string `yaml:"username,omitempty"`
+	Password string `yaml:"password,omitempty"`
+	// TimeoutS: so lange wartet die Quittung auf die Zustandsmeldung des Geräts (Standard 10).
+	TimeoutS int `yaml:"timeout_s,omitempty"`
+	// PerMinute: höchstens so viele Befehle je Gerät und Minute (Standard 10).
+	PerMinute int `yaml:"per_minute,omitempty"`
 }
 
 // RouteConf beschreibt einen zusätzlichen Upstream (siehe Config.Routes).
@@ -59,6 +80,12 @@ type RouteConf struct {
 	Devices []string `yaml:"devices,omitempty"`
 	// BaseTopic von Zigbee2MQTT (Default "zigbee2mqtt").
 	BaseTopic string `yaml:"base_topic"`
+	// CustomerNumber ist die Kundennummer des Ziel-Mandanten dieser Route im Monitor. Befehle
+	// für die Geräte der Route kommen über DIESE Verbindung auf cmd/zb/<customer_number>/….
+	CustomerNumber string `yaml:"customer_number,omitempty"`
+	// Control: freigegebene Befehle für Geräte dieser Route (IEEE → Felder). Nur Geräte, die
+	// auch in Devices stehen (falls gesetzt). Leer = über diese Route wird nichts geschaltet.
+	Control map[string][]string `yaml:"control,omitempty"`
 }
 
 // MonitorConf konfiguriert die optionale Anbindung an den MLC Sensor Monitor:
@@ -351,6 +378,9 @@ func LoadConfig(path string) (*Config, error) {
 		}
 	}
 
+	if err := validateControl(&cfg); err != nil {
+		return nil, err
+	}
 	if err := applySecureDefaults(&cfg); err != nil {
 		return nil, err
 	}

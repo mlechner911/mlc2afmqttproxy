@@ -18,6 +18,8 @@ type Stats struct {
 	MessagesDroppedFull uint64 `json:"messages_dropped_buffer_full_total"`
 	// Von den Topic-Filtern (allowed_prefixes / ignored_prefixes) verworfen. Bis 25.11.2026 nicht gezählt.
 	MessagesFiltered uint64 `json:"messages_filtered_total"`
+	// Befehle an zigbee2mqtt (…/set, …/get, bridge/request) — keine Messwerte, nicht weitergeleitet.
+	CommandsSkipped uint64 `json:"commands_skipped_total"`
 }
 
 var (
@@ -29,7 +31,11 @@ var (
 	messagesDeadLettered  uint64
 	messagesDroppedFull   uint64
 	messagesFiltered      uint64
+	commandsSkipped       uint64
 )
+
+// IncCommandSkipped zählt einen Befehl, der nicht gepuffert wurde.
+func IncCommandSkipped() { atomic.AddUint64(&commandsSkipped, 1) }
 
 // IncDeadLettered zählt eine endgültig abgelehnte, in der Dead-Letter-Datei abgelegte Nachricht.
 func IncDeadLettered() { atomic.AddUint64(&messagesDeadLettered, 1) }
@@ -74,5 +80,6 @@ func GetStats() Stats {
 		MessagesDeadLettered:  atomic.LoadUint64(&messagesDeadLettered),
 		MessagesDroppedFull:   atomic.LoadUint64(&messagesDroppedFull),
 		MessagesFiltered:      atomic.LoadUint64(&messagesFiltered),
+		CommandsSkipped:       atomic.LoadUint64(&commandsSkipped),
 	}
 }

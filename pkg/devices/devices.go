@@ -34,6 +34,8 @@ type Device struct {
 	LinkQuality  *float64  `json:"linkquality,omitempty"`
 	// Known: in bridge/devices aufgeführt (sonst nur aus einem Topic erschlossen).
 	Known bool `json:"known"`
+	// Writable: per <name>/set schreibbare Eigenschaften laut z2m-Definition (exposes).
+	Writable []string `json:"writable,omitempty"`
 }
 
 // Tracker sammelt Gerätedaten aus den empfangenen Nachrichten. Sicher für parallele Aufrufe.
@@ -111,6 +113,19 @@ func (t *Tracker) device(name string) *Device {
 		t.devices[name] = d
 	}
 	return d
+}
+
+// ByIEEE sucht ein Gerät über seine IEEE-Adresse (Kopie); ok ist false, wenn es nicht in
+// bridge/devices steht.
+func (t *Tracker) ByIEEE(ieee string) (Device, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, d := range t.devices {
+		if d.Known && strings.EqualFold(d.IEEE, ieee) {
+			return *d, true
+		}
+	}
+	return Device{}, false
 }
 
 // Drain liefert die Nachrichten je Gerät seit dem letzten Aufruf und setzt sie zurück.

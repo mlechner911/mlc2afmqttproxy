@@ -80,6 +80,10 @@ func (h *StoreHook) Provides(b byte) bool {
 // Die Nachricht wird abgefangen, in einen PayloadWrapper gepackt und mit dem
 // aktuellen Zeitstempel (für die FIFO-Abarbeitung) in der BadgerDB gespeichert.
 func (h *StoreHook) OnPublish(cl *mqtt.Client, pk packets.Packet) (packets.Packet, error) {
+	if isCommand(cl, pk.TopicName) {
+		metrics.IncCommandSkipped()
+		return pk, nil // Befehl, kein Messwert: nicht puffern, nicht weiterleiten
+	}
 	metrics.IncReceived()
 	observe(pk.TopicName, pk.Payload)
 
@@ -228,7 +232,7 @@ func StartLocalBroker(bind string, users []config.LocalUser, port int, wsPort in
 	// Größte Nachricht: z2m-Zustände sind < 4 KiB, bridge/devices mit vielen Geräten einige 100 KiB.
 	// Bis 07.11.2026 unbegrenzt — eine 100-MB-Nachricht wurde angenommen, kostete fast 1 GB Speicher
 	// und ging danach still verloren, weil die Datenbank sie ablehnte (Sicherheitsprüfung P3-08).
-	server := mqtt.New(&mqtt.Options{Capabilities: localCapabilities()})
+	server := mqtt.New(&mqtt.Options{Capabilities: localCapabilities(), InlineClient: inlineEnabled.Load()})
 
 	// Anmeldung: von Loopback frei, von außen nur mit Konto (auth.go). Vorher auth.AllowHook.
 	if err := server.AddHook(NewLocalAuthHook(users), nil); err != nil {

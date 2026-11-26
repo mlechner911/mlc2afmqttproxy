@@ -46,3 +46,39 @@ func TestFilterHitsAttributed(t *testing.T) {
 		t.Errorf("gepuffert: %d, soll 1 (nur zigbee2mqtt/0x01)", n)
 	}
 }
+
+// TestCommandsNotBuffered: Befehle an zigbee2mqtt sind keine Messwerte und gehen nicht nach oben.
+func TestCommandsNotBuffered(t *testing.T) {
+	SetCommandBase("zigbee2mqtt")
+	for topic, want := range map[string]bool{
+		"zigbee2mqtt/0x01/set":                    true,
+		"zigbee2mqtt/0x01/set/led_indicator":      true,
+		"zigbee2mqtt/0x01/get":                    true,
+		"zigbee2mqtt/Flur/Licht/set":              true,
+		"zigbee2mqtt/bridge/request/permit_join":  true,
+		"zigbee2mqtt/0x01":                        false,
+		"zigbee2mqtt/0x01/availability":           false,
+		"zigbee2mqtt/bridge/devices":              false,
+		"zigbee2mqtt/bridge/response/permit_join": false,
+		"zigbee2mqtt/set":                         false, // Gerät heißt „set“
+		"anderes/0x01/set":                        false,
+	} {
+		if got := isCommand(nil, topic); got != want {
+			t.Errorf("%s: %v, soll %v", topic, got, want)
+		}
+	}
+	st, err := storage.InitBadger(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	h := &StoreHook{store: st, lastSeen: map[string]lastMsg{}}
+	var pk packets.Packet
+	pk.TopicName, pk.Payload = "zigbee2mqtt/0x01/set", []byte(`{"state":"ON"}`)
+	if _, err := h.OnPublish(nil, pk); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := st.GetSize(); n != 0 {
+		t.Fatalf("Befehl gepuffert: %d", n)
+	}
+}

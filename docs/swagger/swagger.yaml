@@ -1,4 +1,24 @@
 definitions:
+  control.Entry:
+    properties:
+      device:
+        type: string
+      fields:
+        additionalProperties: {}
+        type: object
+      id:
+        type: string
+      ieee:
+        type: string
+      reason:
+        type: string
+      result:
+        type: string
+      tenant:
+        type: string
+      time:
+        type: string
+    type: object
   history.Day:
     properties:
       buffer_max:
@@ -110,6 +130,43 @@ definitions:
         example: upstream_down
         type: string
     type: object
+  web.ControlResponse:
+    properties:
+      counts:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+      direct:
+        description: 'Direct: Befehle über den eigenen Broker; sonst über control.broker
+          (z. B. Mosquitto).'
+        type: boolean
+      enabled:
+        type: boolean
+      recent:
+        items:
+          $ref: '#/definitions/control.Entry'
+        type: array
+      tenants:
+        items:
+          $ref: '#/definitions/web.ControlTenant'
+        type: array
+    type: object
+  web.ControlTenant:
+    properties:
+      allowed:
+        additionalProperties:
+          items:
+            type: string
+          type: array
+        description: IEEE → Felder
+        type: object
+      customer:
+        type: string
+      name:
+        example: main
+        type: string
+    type: object
   web.DeviceHistoryResponse:
     properties:
       name:
@@ -166,6 +223,12 @@ definitions:
         type: string
       vendor:
         type: string
+      writable:
+        description: 'Writable: per <name>/set schreibbare Eigenschaften laut z2m-Definition
+          (exposes).'
+        items:
+          type: string
+        type: array
     type: object
   web.DevicesResponse:
     properties:
@@ -270,6 +333,10 @@ definitions:
       buffer_count:
         description: Die aktuelle Anzahl der in BadgerDB zwischengespeicherten Nachrichten.
         type: integer
+      commands_skipped_total:
+        description: Befehle an zigbee2mqtt (…/set, …/get, bridge/request) — keine
+          Messwerte, nicht weitergeleitet.
+        type: integer
       messages_dead_lettered_total:
         description: Endgültig abgelehnt und in der Dead-Letter-Datei abgelegt (nicht
           weitergeleitet).
@@ -331,6 +398,26 @@ definitions:
 info:
   contact: {}
 paths:
+  /api/v1/control:
+    get:
+      description: Freigegebene Geräte je Mandant, Ergebnisse seit dem Start, die
+        letzten 200 Befehle. Nur angemeldet.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/web.ControlResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Rückweg (Befehle aus dem Monitor)
+      tags:
+      - Control
   /api/v1/devices:
     get:
       description: Geräte aus zigbee2mqtt mit Nachrichten heute/7/30 Tage, mittlerem

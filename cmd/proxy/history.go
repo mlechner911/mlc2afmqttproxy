@@ -5,7 +5,6 @@ import (
 	"log"
 	"path/filepath"
 
-	"mlc2afmqttproxy/pkg/broker"
 	"mlc2afmqttproxy/pkg/config"
 	"mlc2afmqttproxy/pkg/devices"
 	"mlc2afmqttproxy/pkg/forwarder"
@@ -26,15 +25,14 @@ func openHistory(cfg *config.Config) *history.Store {
 	return h
 }
 
-// openDevices legt die Gerätestatistik an, lädt den gespeicherten Stand und hängt sie an den
-// lokalen Broker; sie wird mit dem Verlauf jede Minute gesichert.
+// openDevices legt die Gerätestatistik an und lädt den gespeicherten Stand; sie wird mit dem
+// Verlauf jede Minute gesichert. An den Broker hängt sie main (zusammen mit dem Rückweg).
 func openDevices(cfg *config.Config, h *history.Store) *devices.Tracker {
 	t := devices.New(cfg.MQTT.ZigbeeBaseTopic)
 	path := filepath.Join(cfg.Storage.Path, "history", "devices.json")
 	if err := t.Load(path); err != nil {
 		log.Printf("[devices] %v", err)
 	}
-	broker.SetObserver(t.Observe)
 	if h != nil {
 		h.OnFlush = func() {
 			if err := t.Save(path); err != nil {
@@ -85,7 +83,7 @@ func sampler(db *storage.Store, fwd forwarder.Forwarder, w *worker.Worker, dev *
 				DeadLettered: int64(st.MessagesDeadLettered),
 				Dropped:      int64(st.MessagesDroppedFull),
 			},
-			Buffer: int64(n),
+			Buffer:  int64(n),
 			State:   forwardState(fwd, w, *paused),
 			Devices: dev.Drain(),
 		}

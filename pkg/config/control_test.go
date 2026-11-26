@@ -1,0 +1,33 @@
+package config
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestValidateControl(t *testing.T) {
+	tests := []struct {
+		name, yaml, wantErr string
+	}{
+		{"aus", "mode: mqtt\n", ""},
+		{"ok", "monitor:\n  customer_number: \"4111\"\ncontrol:\n  devices:\n    \"0xa4c138eeaab187e0\": [state]\n", ""},
+		{"ohne Kundennummer", "control:\n  devices:\n    \"0xa4c138eeaab187e0\": [state]\n", "customer_number"},
+		{"Name statt IEEE", "monitor:\n  customer_number: \"4111\"\ncontrol:\n  devices:\n    \"Flur Licht\": [state]\n", "IEEE"},
+		{"ohne Felder", "monitor:\n  customer_number: \"4111\"\ncontrol:\n  devices:\n    \"0x01\": []\n", "ohne Felder"},
+		{"Feld mit Wildcard", "monitor:\n  customer_number: \"4111\"\ncontrol:\n  devices:\n    \"0x01\": [\"#\"]\n", "ungültiges Feld"},
+		{"Route ok", "routes:\n  - name: demo\n    customer_number: \"2641\"\n    devices: [\"0x01\", \"0x02\"]\n    control:\n      \"0x01\": [state]\n", ""},
+		{"Route ohne Kundennummer", "routes:\n  - name: demo\n    control:\n      \"0x01\": [state]\n", "customer_number der Route"},
+		{"Route fremdes Gerät", "routes:\n  - name: demo\n    customer_number: \"2641\"\n    devices: [\"0x01\"]\n    control:\n      \"0x09\": [state]\n", "eigenen Geräte"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := load(t, tt.yaml)
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("unerwarteter Fehler: %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("Fehler = %v, soll %q enthalten", err, tt.wantErr)
+			}
+		})
+	}
+}

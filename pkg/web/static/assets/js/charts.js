@@ -29,7 +29,8 @@ darkQuery.addEventListener('change', () => redraws.forEach((f) => f()));
 // zoom (optional): { onSelect(from, to), onReset() } — Bereich aufziehen zoomt, Doppelklick zurück.
 function draw(target, build, zoom) {
     const run = () => {
-        if (!target.isConnected || target.offsetParent === null) return; // unsichtbar: später
+        if (!target.isConnected) { redraws.delete(run); return; } // ersetzt (jede Minute neu): vergessen
+        if (target.offsetParent === null) return; // unsichtbar: beim Zeigen
         target.replaceChildren();
         const chart = mount(target, { locale: 'en-GB', margin: 'auto', theme: darkQuery.matches ? DARK : LIGHT, ...build() });
         if (zoom) attachBrush(target, chart, zoom);

@@ -17,7 +17,14 @@ const BADGE = {
     off: ['Disconnected', 'pill bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300'],
 };
 
-export function initLive() {
+// onLoggedOut: von app.js — die Sitzung ist weg (z. B. nach einem Neustart des Proxys, Sitzungen
+// liegen nur im Speicher); dann zeigt die Seite das Anmeldeformular statt weiter zu verbinden.
+let onLoggedOut = () => {};
+let retryMs = 5000;
+let reconnectTimer = null;
+
+export function initLive(opts = {}) {
+    if (opts.onLoggedOut) onLoggedOut = opts.onLoggedOut;
     container = document.getElementById('tree-container');
     badge = document.getElementById('conn-badge');
     document.getElementById('clear-tree-btn').addEventListener('click', () => {
@@ -34,7 +41,39 @@ export function showLive() {
 // startLive verbindet einmal; danach hält sich die Verbindung selbst (Wiederverbinden nach 5 s).
 export function startLive() {
     if (socket) return;
+    clearTimeout(reconnectTimer);
+    retryMs = 5000;
     connect();
+}
+
+// stopLive trennt und verbindet nicht wieder (abgemeldet).
+export function stopLive() {
+    clearTimeout(reconnectTimer);
+    if (socket) {
+        socket.onclose = null;
+        socket.close();
+        socket = null;
+    }
+    clearInterval(pingTimer);
+    setBadge(BADGE.off);
+}
+
+// Nach einem Abbruch: Ist die Sitzung weg, nicht mehr verbinden, sondern anmelden lassen. Bis
+// 26.11.2026 versuchte die Seite es endlos alle 5 s (jeder Versuch 401) und zeigte nie das
+// Formular — die Live-Ansicht stand still, bis man die Seite neu lud.
+async function afterClose() {
+    socket = null;
+    let authorized = true;
+    try {
+        const res = await fetch('/api/v1/status', { headers: { 'X-Proxy-UI': '1' }, credentials: 'same-origin' });
+        if (res.ok) authorized = (await res.json()).authorized;
+    } catch { /* Proxy nicht erreichbar: später erneut */ }
+    if (!authorized) {
+        onLoggedOut();
+        return;
+    }
+    reconnectTimer = setTimeout(connect, retryMs);
+    retryMs = Math.min(retryMs * 2, 60000);
 }
 
 function setBadge([text, cls]) {
@@ -49,6 +88,7 @@ function connect() {
     rxBuffer = new Uint8Array(0);
     socket.onopen = () => {
         setBadge(BADGE.on);
+        retryMs = 5000;
         // CONNECT, MQTT 3.1.1, clean session, keep-alive 60 s
         socket.send(new Uint8Array([0x10, 12, 0, 4, 77, 81, 84, 84, 4, 2, 0, 60, 0, 0]));
         pingTimer = setInterval(() => {
@@ -58,7 +98,7 @@ function connect() {
     socket.onclose = () => {
         setBadge(BADGE.off);
         clearInterval(pingTimer);
-        setTimeout(connect, 5000);
+        afterClose();
     };
     socket.onmessage = (ev) => {
         const chunk = new Uint8Array(ev.data);

@@ -6,6 +6,7 @@ One line per change. Background, measurements and ticket references: release not
 
 ### Fixed
 - The dashboard froze: the live tree rebuilt every node, about 118,000 with zigbee2mqtt's bridge topics, on each message, even while hidden.
+- After a proxy restart the live view reconnected every 5 s forever instead of asking to sign in again.
 
 ## [1.3.0] - 2026-11-25
 

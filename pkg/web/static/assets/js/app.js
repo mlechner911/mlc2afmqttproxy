@@ -5,7 +5,7 @@ import { API, getJSON, postJSON, fmtNum, fmtAge, fmtDuration, STATES } from './a
 import { initStats, loadStats, setAuth } from './stats.js';
 import { initInterruptions, loadInterruptions } from './interruptions.js';
 import { loadFilters } from './filters.js';
-import { initLive, startLive, showLive } from './live.js';
+import { initLive, startLive, showLive, stopLive } from './live.js';
 import { redrawAll } from './charts.js';
 
 const TABS = ['stats', 'interruptions', 'filters', 'live'];
@@ -15,6 +15,7 @@ let status = null;
 let current = 'stats';
 
 async function refreshStatus() {
+    const wasAuthorized = status?.authorized;
     try {
         status = await getJSON(`${API}/status`);
     } catch {
@@ -23,6 +24,8 @@ async function refreshStatus() {
         return;
     }
     setAuth({ authorized: status.authorized, devicesPublic: status.devices_public });
+    // Sitzung verloren (Neustart des Proxys, abgelaufen): geschützte Tabs zeigen wieder das Formular.
+    if (wasAuthorized && !status.authorized) loggedOut();
     document.querySelectorAll('.lock').forEach((l) => l.classList.toggle('hidden', status.authorized));
     $('logout-btn').classList.toggle('hidden', !(status.authorized && status.login_configured));
     if (!status.state) { // Statistik nicht öffentlich und nicht angemeldet
@@ -38,6 +41,12 @@ async function refreshStatus() {
     $('hdr-zigbee').className = `font-semibold ${status.zigbee_connected ? '' : 'text-rose-600 dark:text-rose-400'}`;
     $('hdr-uptime').textContent = fmtDuration(status.uptime_s);
     $('hdr-version').textContent = status.version;
+}
+
+function loggedOut() {
+    stopLive();
+    if (status) status.authorized = false;
+    selectTab(current);
 }
 
 function selectTab(name) {
@@ -88,7 +97,7 @@ async function logout() {
 }
 
 async function boot() {
-    initLive();
+    initLive({ onLoggedOut: async () => { await refreshStatus(); loggedOut(); } });
     initStats();
     initInterruptions();
     for (const t of TABS) $(`tab-${t}`).addEventListener('click', () => selectTab(t));

@@ -77,10 +77,11 @@ func dial(ctx context.Context, o connOpts) (*conn, error) {
 }
 
 // subscribeAll abonniert nach jedem Verbindungsaufbau; ein abgelehntes Abo (Reason ≥ 0x80, z. B.
-// ACL im Monitor noch nicht eingerichtet) wird laut gemeldet statt still hingenommen.
+// ACL im Monitor noch nicht eingerichtet) wird laut gemeldet statt still hingenommen. NoLocal: die
+// eigenen Quittungen kommen unter einem Abo wie cmd/zb/# nicht zurück.
 func (c *conn) subscribeAll(ctx context.Context, cm *autopaho.ConnectionManager, topics []string) {
 	for _, t := range topics {
-		sa, err := cm.Subscribe(ctx, &paho.Subscribe{Subscriptions: []paho.SubscribeOptions{{Topic: t, QoS: 1}}})
+		sa, err := cm.Subscribe(ctx, &paho.Subscribe{Subscriptions: []paho.SubscribeOptions{{Topic: t, QoS: 1, NoLocal: true}}})
 		switch {
 		case err != nil:
 			log.Printf("[control %s] Abo %s fehlgeschlagen: %v", c.name, t, err)

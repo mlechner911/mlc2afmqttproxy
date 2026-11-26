@@ -44,6 +44,18 @@ func TestParseRequest(t *testing.T) {
 			t.Errorf("%s: IEEE = %q", tt.name, req.IEEE)
 		}
 	}
+	for topic, want := range map[string][2]string{
+		"cmd/zb/4111/0x01/set":   {"0x01", "cmd/zb/4111/0x01/ack"},
+		"cmd/zb/0x01/set":        {"0x01", "cmd/zb/0x01/ack"},
+		"ha/a/b/c/0x02/set":      {"0x02", "ha/a/b/c/0x02/ack"},
+		"cmd/zb/4111/0x01/state": {"", ""},
+		"set":                    {"", ""},
+	} {
+		req, _ := ParseRequest(topic, []byte(`{"state":"ON","_id":"x"}`))
+		if req.IEEE != want[0] || req.AckTopic != want[1] {
+			t.Errorf("%s: IEEE=%q Ack=%q, erwartet %v", topic, req.IEEE, req.AckTopic, want)
+		}
+	}
 }
 
 func TestPolicyCheck(t *testing.T) {

@@ -11,12 +11,15 @@ func TestValidateControl(t *testing.T) {
 	}{
 		{"aus", "mode: mqtt\n", ""},
 		{"ok", "monitor:\n  customer_number: \"4111\"\ncontrol:\n  devices:\n    \"0xa4c138eeaab187e0\": [state]\n", ""},
-		{"ohne Kundennummer", "control:\n  devices:\n    \"0xa4c138eeaab187e0\": [state]\n", "customer_number"},
+		{"ohne Kundennummer", "control:\n  devices:\n    \"0xa4c138eeaab187e0\": [state]\n", ""},
+		{"eigenes Abo", "control:\n  subscribe: \"cmd/zb/4111/+/set\"\n  devices:\n    \"0x01\": [state]\n", ""},
+		{"Abo # in der Mitte", "control:\n  subscribe: \"cmd/#/set\"\n  devices:\n    \"0x01\": [state]\n", "nur am Ende"},
 		{"Name statt IEEE", "monitor:\n  customer_number: \"4111\"\ncontrol:\n  devices:\n    \"Flur Licht\": [state]\n", "IEEE"},
 		{"ohne Felder", "monitor:\n  customer_number: \"4111\"\ncontrol:\n  devices:\n    \"0x01\": []\n", "ohne Felder"},
 		{"Feld mit Wildcard", "monitor:\n  customer_number: \"4111\"\ncontrol:\n  devices:\n    \"0x01\": [\"#\"]\n", "ungültiges Feld"},
 		{"Route ok", "routes:\n  - name: demo\n    customer_number: \"2641\"\n    devices: [\"0x01\", \"0x02\"]\n    control:\n      \"0x01\": [state]\n", ""},
-		{"Route ohne Kundennummer", "routes:\n  - name: demo\n    control:\n      \"0x01\": [state]\n", "customer_number der Route"},
+		{"Route ohne Kundennummer", "routes:\n  - name: demo\n    control:\n      \"0x01\": [state]\n", ""},
+		{"Route Abo kaputt", "routes:\n  - name: demo\n    control_subscribe: \"cmd/zb+/#\"\n    control:\n      \"0x01\": [state]\n", "ganzes Segment"},
 		{"Route fremdes Gerät", "routes:\n  - name: demo\n    customer_number: \"2641\"\n    devices: [\"0x01\"]\n    control:\n      \"0x09\": [state]\n", "eigenen Geräte"},
 	}
 	for _, tt := range tests {

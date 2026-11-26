@@ -1,9 +1,10 @@
 // Package control ist der Rückweg vom MLC Sensor Monitor zu zigbee2mqtt (Plan P-AFMQ-20261126-01).
 //
 // Der Proxy schaltet nie selbst: keine Regeln, keine Grenzwerte auf der Box. Er nimmt Befehle
-// auf cmd/zb/<kundennummer>/<ieee>/set an, prüft sie gegen die Freigabe in der config.yaml und gegen
+// auf …/<ieee>/set an (Abo je Upstream, Vorgabe cmd/zb/# — welche Befehle ankommen, entscheidet der
+// Upstream), prüft sie gegen die Freigabe in der config.yaml und gegen
 // das, was das Gerät laut zigbee2mqtt (bridge/devices → exposes) beschreiben lässt, reicht sie an
-// <base>/<gerät>/set weiter und quittiert auf …/ack — „ok“ erst, wenn das Gerät den neuen Zustand
+// <base>/<gerät>/set weiter und quittiert auf demselben Topic mit /ack statt /set — „ok“ erst, wenn das Gerät den neuen Zustand
 // meldet. Befehle werden nie gepuffert: Was nicht sofort geht, wird abgelehnt.
 package control
 
@@ -37,15 +38,23 @@ type Request struct {
 	IEEE   string
 	ID     string
 	Fields map[string]any
+	// AckTopic: das Befehls-Topic mit /ack statt /set — leer, wenn das Topic kein Gerät nennt.
+	AckTopic string
 }
 
-// ParseRequest liest IEEE aus dem Topic (cmd/zb/<kunde>/<ieee>/set) und Felder samt _id aus dem
-// Payload. _id wird entfernt — es geht nicht an zigbee2mqtt.
+// IsCommand: Das Topic ist ein Befehl (…/<ieee>/set). Alles andere unter dem Abo — etwa die
+// eigenen Quittungen — wird still übergangen.
+func IsCommand(topic string) bool { return strings.HasSuffix(topic, "/set") }
+
+// ParseRequest liest die IEEE-Adresse aus dem Topic (das Segment vor /set) und Felder samt _id
+// aus dem Payload. _id wird entfernt — es geht nicht an zigbee2mqtt.
 func ParseRequest(topic string, payload []byte) (Request, string) {
-	parts := strings.Split(topic, "/")
 	req := Request{}
-	if len(parts) == 5 {
-		req.IEEE = parts[3]
+	if rest, ok := strings.CutSuffix(topic, "/set"); ok {
+		if i := strings.LastIndex(rest, "/"); i >= 0 && i < len(rest)-1 {
+			req.IEEE = rest[i+1:]
+			req.AckTopic = rest + "/ack"
+		}
 	}
 	var fields map[string]any
 	if json.Unmarshal(payload, &fields) != nil || fields == nil {

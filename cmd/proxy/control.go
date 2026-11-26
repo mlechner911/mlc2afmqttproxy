@@ -53,7 +53,6 @@ func prepareControl(cfg *config.Config) {
 type controlRuntime struct {
 	tenants []*control.Tenant
 	names   []string
-	custs   []string
 	journal *control.Journal
 	direct  bool
 	close   func()
@@ -72,9 +71,9 @@ func startControl(cfg *config.Config, devs *devices.Tracker, waiters *control.Wa
 	}
 	zb, closeZB := zigbeePort(ctx, cfg, cc, waiters, local)
 	base := zigbeeBase(cfg)
-	start := func(name, customer, server, clientID, user, pass string, allow map[string][]string) {
+	start := func(name, subscribe, server, clientID, user, pass string, allow map[string][]string) {
 		t, err := control.StartTenant(ctx, control.TenantOpts{
-			Name: name, Customer: customer, Base: base, Server: server, ClientID: clientID,
+			Name: name, Subscribe: subscribe, Base: base, Server: server, ClientID: clientID,
 			Username: user, Password: pass, Allow: allow, Lookup: devs.ByIEEE,
 			PerMinute: cc.PerMinute, Timeout: time.Duration(cc.TimeoutS) * time.Second,
 			Zigbee: zb, Waiters: waiters, Journal: rt.journal,
@@ -83,17 +82,17 @@ func startControl(cfg *config.Config, devs *devices.Tracker, waiters *control.Wa
 			log.Printf("[control %s] nicht gestartet: %v", name, err)
 			return
 		}
-		rt.tenants, rt.names, rt.custs = append(rt.tenants, t), append(rt.names, name), append(rt.custs, customer)
+		rt.tenants, rt.names = append(rt.tenants, t), append(rt.names, name)
 	}
 	if len(cc.Devices) > 0 && cfg.Mode == "mqtt" {
-		start("main", cfg.Monitor.CustomerNumber, cfg.MQTT.Upstream, cfg.UpstreamClientID()+"-zb",
+		start("main", cc.Subscribe, cfg.MQTT.Upstream, cfg.UpstreamClientID()+"-zb",
 			cfg.MQTT.Username, cfg.MQTT.Password, cc.Devices)
 	}
 	for _, r := range cfg.Routes {
 		if len(r.Control) == 0 || r.Mode == "http" {
 			continue
 		}
-		start(r.Name, r.CustomerNumber, r.Upstream, cfg.UpstreamClientID()+"-route-"+r.Name+"-zb",
+		start(r.Name, r.ControlSubscribe, r.Upstream, cfg.UpstreamClientID()+"-route-"+r.Name+"-zb",
 			r.Username, r.Password, r.Control)
 	}
 	rt.close = func() {
@@ -131,7 +130,7 @@ func (rt *controlRuntime) state() *web.ControlResponse {
 	}
 	out := &web.ControlResponse{Enabled: true, Direct: rt.direct, Counts: rt.journal.Counts(), Recent: rt.journal.Recent()}
 	for i, t := range rt.tenants {
-		out.Tenants = append(out.Tenants, web.ControlTenant{Name: rt.names[i], Customer: rt.custs[i], Allowed: t.Allowed()})
+		out.Tenants = append(out.Tenants, web.ControlTenant{Name: rt.names[i], Subscribe: t.Subscribe(), Allowed: t.Allowed()})
 	}
 	return out
 }

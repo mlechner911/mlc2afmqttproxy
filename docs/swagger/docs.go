@@ -530,12 +530,13 @@ const docTemplate = `{
                         }
                     }
                 },
-                "customer": {
-                    "type": "string"
-                },
                 "name": {
                     "type": "string",
                     "example": "main"
+                },
+                "subscribe": {
+                    "type": "string",
+                    "example": "cmd/zb/#"
                 }
             }
         },

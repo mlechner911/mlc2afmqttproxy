@@ -18,9 +18,13 @@ type Zigbee interface {
 	Ready() bool
 }
 
-// TenantOpts beschreibt einen Mandanten: Haupt-Upstream oder eine Route mit eigener Kundennummer.
+// DefaultSubscribe ist das Befehls-Abo, wenn die Konfiguration keines nennt. mlcmonit stellt
+// darüber nur Befehle des eigenen Mandanten zu (Prüfung je Zustellung im Broker).
+const DefaultSubscribe = "cmd/zb/#"
+
+// TenantOpts beschreibt einen Mandanten: Haupt-Upstream oder eine Route.
 type TenantOpts struct {
-	Name, Customer, Base                 string
+	Name, Subscribe, Base                string
 	Server, ClientID, Username, Password string
 	Allow                                map[string][]string
 	Lookup                               func(ieee string) (devices.Device, bool)
@@ -38,32 +42,36 @@ type Tenant struct {
 	up     *conn
 }
 
-// StartTenant verbindet mit dem Upstream des Mandanten und abonniert cmd/zb/<kundennr>/+/set.
+// StartTenant verbindet mit dem Upstream des Mandanten und abonniert o.Subscribe.
 func StartTenant(ctx context.Context, o TenantOpts) (*Tenant, error) {
 	if o.Timeout <= 0 {
 		o.Timeout = 10 * time.Second
 	}
+	if o.Subscribe == "" {
+		o.Subscribe = DefaultSubscribe
+	}
 	t := &Tenant{o: o, policy: NewPolicy(o.Allow, o.Lookup, o.PerMinute)}
 	up, err := dial(ctx, connOpts{
 		name: o.Name, server: o.Server, clientID: o.ClientID, username: o.Username, password: o.Password,
-		subscribe: []string{t.prefix() + "+/set"},
+		subscribe: []string{o.Subscribe},
 		onMessage: func(pr autopaho.PublishReceived) { t.handle(ctx, pr) },
 	})
 	if err != nil {
 		return nil, err
 	}
 	t.up = up
-	log.Printf("[control %s] aktiv: %d Gerät(e) freigegeben, Befehle auf %s+/set", o.Name, len(o.Allow), t.prefix())
+	log.Printf("[control %s] aktiv: %d Gerät(e) freigegeben, Befehle auf %s", o.Name, len(o.Allow), o.Subscribe)
 	return t, nil
 }
+
+// Subscribe liefert das Befehls-Abo dieses Mandanten.
+func (t *Tenant) Subscribe() string { return t.o.Subscribe }
 
 // Allowed liefert die Freigabe dieses Mandanten.
 func (t *Tenant) Allowed() map[string][]string { return t.policy.Allowed() }
 
 // Close trennt die Upstream-Verbindung.
 func (t *Tenant) Close(ctx context.Context) { t.up.close(ctx) }
-
-func (t *Tenant) prefix() string { return "cmd/zb/" + t.o.Customer + "/" }
 
 // Ack ist die Quittung an den Monitor.
 type Ack struct {
@@ -75,6 +83,9 @@ type Ack struct {
 
 func (t *Tenant) handle(ctx context.Context, pr autopaho.PublishReceived) {
 	pk := pr.Packet
+	if !IsCommand(pk.Topic) {
+		return // z. B. die eigene Quittung unter cmd/zb/#
+	}
 	if len(pk.Payload) == 0 {
 		return // leer = Löschen einer gespeicherten Nachricht, kein Befehl
 	}
@@ -131,11 +142,11 @@ func (t *Tenant) finish(ctx context.Context, req Request, name string, ack Ack) 
 	t.o.Journal.Add(Entry{Time: time.Now(), Tenant: t.o.Name, IEEE: req.IEEE, Device: name,
 		ID: req.ID, Fields: req.Fields, Result: ack.Result, Reason: ack.Reason})
 	log.Printf("[control %s] %s %v → %s %s", t.o.Name, req.IEEE, req.Fields, ack.Result, ack.Reason)
-	if req.IEEE == "" {
+	if req.AckTopic == "" {
 		return // kein Gerät im Topic: keine Quittungsadresse
 	}
 	b, _ := json.Marshal(ack)
-	if err := t.up.publish(ctx, t.prefix()+req.IEEE+"/ack", b); err != nil {
+	if err := t.up.publish(ctx, req.AckTopic, b); err != nil {
 		log.Printf("[control %s] Quittung nicht gesendet: %v", t.o.Name, err)
 	}
 }

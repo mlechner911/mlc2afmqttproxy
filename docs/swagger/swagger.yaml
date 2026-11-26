@@ -161,10 +161,11 @@ definitions:
           type: array
         description: IEEE → Felder
         type: object
-      customer:
-        type: string
       name:
         example: main
+        type: string
+      subscribe:
+        example: cmd/zb/#
         type: string
     type: object
   web.DeviceHistoryResponse:

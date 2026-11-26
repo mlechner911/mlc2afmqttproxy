@@ -70,7 +70,7 @@ function controlCard(ctl) {
         `Commands go to zigbee2mqtt via ${ctl.direct ? 'the built-in broker' : 'control.broker'}. `
         + `Since start: ${['ok', 'rejected', 'timeout'].map((k) => `${fmtNum(ctl.counts[k] || 0)} ${k}`).join(' · ')}`));
     card.append(el('ul', { class: 'mb-3 space-y-1' }, ctl.tenants.map((t) => el('li', {},
-        el('b', {}, t.name), ` (customer ${t.customer}): `,
+        el('b', {}, t.name), ` (${t.subscribe}): `,
         Object.entries(t.allowed).map(([ieee, f]) => `${ieee} → ${f.join(', ')}`).join(' · ')))));
     if (!ctl.recent.length) {
         card.append(el('p', { class: 'text-slate-500 dark:text-slate-400' }, 'No commands yet.'));

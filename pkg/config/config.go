@@ -42,12 +42,16 @@ type Config struct {
 }
 
 // ControlConf: Geräte aus dem MLC Sensor Monitor schalten (seit 1.5). Der Proxy schaltet nie
-// selbst — er reicht freigegebene Befehle von cmd/zb/<kundennummer>/<ieee>/set an
-// <base>/<gerät>/set weiter und quittiert auf …/ack. Ohne Devices ist der Rückweg aus.
+// selbst — er reicht freigegebene Befehle von …/<ieee>/set (Abo Subscribe, Vorgabe cmd/zb/#) an
+// <base>/<gerät>/set weiter und quittiert auf demselben Topic mit /ack. Ohne Devices ist der
+// Rückweg aus.
 type ControlConf struct {
 	// Devices: IEEE-Adresse → Felder, die gesetzt werden dürfen (z. B. ["state"]). Gilt für den
-	// Haupt-Mandanten (monitor.customer_number); Routen haben ihre eigene Liste.
+	// Haupt-Upstream; Routen haben ihre eigene Liste.
 	Devices map[string][]string `yaml:"devices,omitempty"`
+	// Subscribe: Topic-Filter für Befehle am Haupt-Upstream (Standard "cmd/zb/#"). Welche Befehle
+	// davon ankommen, entscheidet der Upstream (mlcmonit: nur der eigene Mandant).
+	Subscribe string `yaml:"subscribe,omitempty"`
 	// Broker, an dem zigbee2mqtt hängt. Leer = der eigene Broker (Direktbetrieb); sonst z. B.
 	// "tcp://127.0.0.1:1883" (zigbee2mqtt an Mosquitto, Proxy über die mqttbridge).
 	Broker   string `yaml:"broker,omitempty"`
@@ -80,9 +84,11 @@ type RouteConf struct {
 	Devices []string `yaml:"devices,omitempty"`
 	// BaseTopic von Zigbee2MQTT (Default "zigbee2mqtt").
 	BaseTopic string `yaml:"base_topic"`
-	// CustomerNumber ist die Kundennummer des Ziel-Mandanten dieser Route im Monitor. Befehle
-	// für die Geräte der Route kommen über DIESE Verbindung auf cmd/zb/<customer_number>/….
+	// CustomerNumber wird nicht mehr gebraucht (seit 1.5 abonniert der Rückweg control_subscribe);
+	// ein vorhandener Wert ist erlaubt und bleibt ungenutzt.
 	CustomerNumber string `yaml:"customer_number,omitempty"`
+	// ControlSubscribe: Topic-Filter für Befehle über diese Route (Standard "cmd/zb/#").
+	ControlSubscribe string `yaml:"control_subscribe,omitempty"`
 	// Control: freigegebene Befehle für Geräte dieser Route (IEEE → Felder). Nur Geräte, die
 	// auch in Devices stehen (falls gesetzt). Leer = über diese Route wird nichts geschaltet.
 	Control map[string][]string `yaml:"control,omitempty"`

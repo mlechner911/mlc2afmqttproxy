@@ -9,9 +9,9 @@ import (
 
 // ControlTenant ist ein Mandant des Rückwegs mit seiner Freigabe.
 type ControlTenant struct {
-	Name     string              `json:"name" example:"main"`
-	Customer string              `json:"customer"`
-	Allowed  map[string][]string `json:"allowed"` // IEEE → Felder
+	Name      string              `json:"name" example:"main"`
+	Subscribe string              `json:"subscribe" example:"cmd/zb/#"`
+	Allowed   map[string][]string `json:"allowed"` // IEEE → Felder
 }
 
 // ControlResponse zeigt den Rückweg: Freigaben, Zähler seit dem Start, letzte Befehle.

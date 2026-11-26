@@ -128,10 +128,17 @@
     <!-- Live (angemeldet) -->
     <section id="panel-live" role="tabpanel" aria-labelledby="tab-live" class="hidden h-full">
         <div id="live" class="mx-auto flex h-full max-w-7xl flex-col px-4 py-4">
-            <div class="mb-3 flex items-center gap-3">
+            <div class="mb-3 flex flex-wrap items-center gap-3">
                 <h2 class="font-semibold">Live MQTT traffic</h2>
                 <span id="conn-badge" class="pill bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">Connecting…</span>
                 <button id="clear-tree-btn" class="btn ml-auto">Clear</button>
+            </div>
+            <div class="mb-3 flex flex-wrap items-center gap-3">
+                <label for="topic-filter" class="sr-only">Filter topics</label>
+                <input id="topic-filter" type="search" autocomplete="off" spellcheck="false"
+                       placeholder="Filter topics — text (0xf074, availability) or MQTT pattern (zigbee2mqtt/+/availability)"
+                       class="min-w-0 flex-1 rounded-lg border border-slate-300 bg-transparent px-3 py-1.5 font-mono text-sm dark:border-slate-700">
+                <span id="filter-count" class="text-xs text-slate-500 tabular-nums dark:text-slate-400"></span>
             </div>
             <div class="card min-h-0 flex-1 overflow-auto">
                 <div id="tree-container" class="font-mono text-xs">

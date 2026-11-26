@@ -10,6 +10,25 @@ let rxBuffer = new Uint8Array(0);
 let pingTimer = null;
 let renderPending = false;
 let dirty = false; // Daten geändert, während der Tab unsichtbar war
+
+// Topic-Filter: Text (Teilstring, ohne Groß/klein) oder MQTT-Muster mit + und #. Gesehene Topics
+// merken wir uns, weil der Baum Topic-Ebenen und JSON-Schlüssel des Payloads mischt.
+const topics = new Set();
+let filter = '';
+let autoOpen = new Set(); // Pfade, die der Filter aufklappt (bei wenigen Treffern)
+const AUTO_OPEN_MAX = 30;
+
+export function topicMatches(topic, f) {
+    if (!f) return true;
+    if (!/[+#]/.test(f)) return topic.toLowerCase().includes(f.toLowerCase());
+    const t = topic.split('/'), p = f.split('/');
+    for (let i = 0; i < p.length; i++) {
+        if (p[i] === '#') return true;
+        if (i >= t.length) return false;
+        if (p[i] !== '+' && p[i] !== t[i]) return false;
+    }
+    return t.length === p.length;
+}
 let container, badge;
 
 const BADGE = {
@@ -26,6 +45,15 @@ let reconnectTimer = null;
 export function initLive(opts = {}) {
     if (opts.onLoggedOut) onLoggedOut = opts.onLoggedOut;
     container = document.getElementById('tree-container');
+    const input = document.getElementById('topic-filter');
+    let t;
+    input.addEventListener('input', () => {
+        clearTimeout(t);
+        t = setTimeout(() => { filter = input.value.trim(); requestAnimationFrame(renderTree); }, 200);
+    });
+    input.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape') { input.value = ''; filter = ''; requestAnimationFrame(renderTree); }
+    });
     badge = document.getElementById('conn-badge');
     document.getElementById('clear-tree-btn').addEventListener('click', () => {
         for (const k in treeData) delete treeData[k];
@@ -149,6 +177,7 @@ function handlePublish(header, data) {
 }
 
 function updateTree(topic, payload) {
+    topics.add(topic);
     const parts = topic.split('/');
     let cur = treeData;
     parts.forEach((part, i) => {
@@ -235,7 +264,7 @@ function createNode(key, val, path) {
     const isObj = val !== null && typeof val === 'object';
     const hasChildren = isObj && Object.keys(val).length > 0;
     const p = path ? `${path}/${key}` : key;
-    const open = openPaths.has(p);
+    const open = openPaths.has(p) || autoOpen.has(p);
     const node = document.createElement('div');
     node.className = 'tree-node';
     const head = document.createElement('div');
@@ -269,9 +298,45 @@ function renderTree() {
     if (Object.keys(treeData).length === 0) return;
     if (container.offsetParent === null) { dirty = true; return; } // Tab unsichtbar: beim Zeigen
     dirty = false;
+    const data = filter ? filtered() : treeData;
+    const count = document.getElementById('filter-count');
+    count.textContent = filter ? `${matchCount} of ${topics.size} topics` : `${topics.size} topics`;
     const frag = document.createDocumentFragment();
-    for (const [k, v] of Object.entries(treeData)) frag.appendChild(createNode(k, v, ''));
+    for (const [k, v] of Object.entries(data)) frag.appendChild(createNode(k, v, ''));
+    if (filter && matchCount === 0) {
+        const e = document.createElement('div');
+        e.className = 'py-10 text-center text-slate-400';
+        e.textContent = 'No topic matches the filter.';
+        frag.appendChild(e);
+    }
     container.replaceChildren(frag);
+}
+
+let matchCount = 0;
+
+// filtered baut einen Baum nur aus den passenden Topics (Werte per Referenz, nichts kopiert) und
+// klappt bei wenigen Treffern deren Pfade auf.
+function filtered() {
+    const out = {};
+    const matches = [...topics].filter((t) => topicMatches(t, filter));
+    matchCount = matches.length;
+    autoOpen = new Set();
+    for (const topic of matches) {
+        const parts = topic.split('/');
+        let src = treeData, dst = out, path = '';
+        for (let i = 0; i < parts.length; i++) {
+            const part = parts[i];
+            if (src == null || typeof src !== 'object' || !(part in src)) break;
+            path = path ? `${path}/${part}` : part;
+            if (i === parts.length - 1) { dst[part] = src[part]; break; } // Topic selbst: ganzer Wert
+            if (dst[part] === src[part]) break; // ein kürzeres Topic hat den ganzen Zweig schon
+            if (matches.length <= AUTO_OPEN_MAX) autoOpen.add(path);
+            if (!(part in dst)) dst[part] = {};
+            dst = dst[part];
+            src = src[part];
+        }
+    }
+    return out;
 }
 
 function showWaiting() {

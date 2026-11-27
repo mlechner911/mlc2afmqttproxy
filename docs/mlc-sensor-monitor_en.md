@@ -91,6 +91,11 @@ On by default (`monitor.enabled`), can be switched off:
 - **Heartbeat:** every 30 s (`monitor.interval_s`) to `http.endpoint` with `http.token`. The monitor
   creates the device **`svc-edgeproxy`** from it and shows it on the **Services** page. If the
   heartbeat stops (proxy down, network gone, token revoked), the monitor reports "No data".
+  It carries `service_up`, `service_state` (1 running · 2 paused · 3 draining), `svc_uptime_s`,
+  `svc_buffer_pending`, `svc_buffer_mb`, `svc_upstream_connected`, `svc_zigbee_connected`,
+  `svc_last_forward_age_s`, `svc_last_receive_age_s`, `svc_forward_failed_total`,
+  `svc_dropped_full_total`, `svc_dead_lettered_total` and `meta.svc_version` / `meta.svc_product`.
+  A proxy can report "running" and still forward nothing — these values show it.
 - **Remote control** (**Services** page, right "control services", with a reason, logged):
   **Pause** (forwarding stops, data stays in the buffer), **Resume** (buffer drains with the
   original times), **Restart**, **Stop**. The proxy receives the commands via the upstream broker it

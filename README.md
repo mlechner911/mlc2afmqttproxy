@@ -56,7 +56,7 @@ Ob du IoT-Daten zentral in die Cloud funkst oder an ein lokales Smart-Home-Syste
 
   * **Topic Rewrite:** Optional kann beim MQTT-Forwarding ein empfangener Topic-Präfix (`match_prefix`) durch einen anderen (`replace_with`) ersetzt werden (z.B. von `zigbee2mqtt/` auf `/v1/bridgedataxxx/`).
 * **Rückweg (Monitor → Gerät, standardmäßig an):** Der MLC Sensor Monitor schaltet Lampen, Steckdosen und Rollläden über den Proxy — ohne Konfiguration auf der Box. Der Proxy schaltet **nie selbst**: Er reicht Befehle an zigbee2mqtt weiter, puffert sie nie und quittiert „ok" erst, wenn das Gerät den neuen Zustand meldet. Details: [Anbindung an den Monitor › Geräte schalten](docs/mlc-sensor-monitor.md#geräte-schalten-rückweg).
-* **Self-Monitoring & Fernsteuerung (optional, standardmäßig an):** Der Proxy meldet sich beim MLC Sensor Monitor als **Dienst** (`svc-edgeproxy`) per Heartbeat und ist von dort **fernsteuerbar** (pause/resume/restart/stop). Fällt der Proxy aus, erzeugt der Monitor automatisch ein Ereignis — der für Zigbee kritische Edge-Pfad ist damit lückenlos überwacht. Bewusst **lose gekoppelt** (kein Code-Import, reines HTTP+MQTT) und **abschaltbar** (`monitor.enabled: false`); der Proxy läuft auch ohne Monitor normal weiter. Details unten unter [Self-Monitoring](#self-monitoring--fernsteuerung).
+* **Self-Monitoring & Fernsteuerung (optional, standardmäßig an):** Der Proxy meldet sich beim MLC Sensor Monitor als **Dienst** (`svc-edgeproxy`) per Heartbeat und ist von dort **fernsteuerbar** (pause/resume/restart/stop). Fällt der Proxy aus, erzeugt der Monitor automatisch ein Ereignis — der für Zigbee kritische Edge-Pfad ist damit lückenlos überwacht. Bewusst **lose gekoppelt** (kein Code-Import, reines HTTP+MQTT) und **abschaltbar** (`monitor.enabled: false`); der Proxy läuft auch ohne Monitor normal weiter. Details: [Anbindung an den Monitor › Heartbeat und Fernsteuerung](docs/mlc-sensor-monitor.md#heartbeat-und-fernsteuerung).
 * **Health & Diagnostik**: `/api/v1/status` (Zustand, Puffer, Verbindungen, Alter der letzten Weiterleitung), `/api/v1/history`, `/api/v1/devices`, `/api/v1/health` (Version). Spec: `docs/swagger/`.
 * **Ausfallsicher**: Out-of-the-Box Systemd-Deployment für Autostart nach Stromausfällen.
 * **Best Practice Setup**: Eine detaillierte Übersicht für das optimale, ausfallsichere Hardware-Setup findest du unter [Best Setup & Integration](file:///mnt/data2tb/mlc2afmqttproxy/docs/best_setup.md).
@@ -142,48 +142,6 @@ Durch das Hinzufügen des `--bidi` Flags arbeitet das Tool bidirektional (leitet
 ./bin/mqttbridge --master tcp://localhost:1883 --slave tcp://localhost:1884 --topic "#" --bidi
 ```
 Nutze `./bin/mqttbridge --help` für weitere Optionen.
-
-## Self-Monitoring & Fernsteuerung
-Der Proxy kann sich beim **MLC Sensor Monitor** als eigener **Dienst** anmelden — als
-*optionale*, **standardmäßig aktive** und bewusst **lose gekoppelte** Funktion (reines
-HTTP + MQTT, **kein** Import von Monitor-Code). So ist der für Zigbee kritische Edge-Pfad
-mitüberwacht, ohne dass der Proxy von der Monitor-Software abhängt.
-
-**Zwei Kanäle (beide einzeln abschaltbar):**
-* **Heartbeat (raus):** alle `interval_s` Sekunden ein `POST` an den Ingest-Endpunkt
-  (`monitor.ingest_url`, Default = `http.endpoint`) mit Header `X-Ingest-Token`. Payload:
-  `service_up=1`, `service_state` (1 läuft · 2 pausiert · 3 leert), `svc_uptime_s`, seit 1.2.1
-  außerdem `svc_buffer_pending`, `svc_buffer_mb`, `svc_upstream_connected`, `svc_zigbee_connected`,
-  `svc_last_forward_age_s`, `svc_last_receive_age_s` (fehlen, solange es seit dem Start noch
-  nichts gab), `svc_forward_failed_total`, `svc_dropped_full_total`, `svc_dead_lettered_total`
-  und `meta.svc_version` / `meta.svc_product`. Die Namen sind die, die der Monitor angemeldet hat
-  — einen unbekannten Schlüssel verwirft er still (1.2.0 schickte andere). Ein Proxy kann „läuft“ melden
-  und trotzdem nichts weiterleiten — diese Werte zeigen es. Der
-  Monitor legt daraus automatisch das Gerät `svc-edgeproxy` an. **Bleibt der Heartbeat
-  aus, erzeugt der Monitor selbst ein „Keine-Daten"-Ereignis** — keine Down-Logik im Proxy nötig.
-* **Steuerung (rein):** der Proxy abonniert auf dem **ohnehin genutzten Upstream-Broker**
-  das Topic `cmd/svc/<name>` (z. B. `cmd/svc/edgeproxy`) und beantwortet Befehle mit einem
-  Ack auf `cmd/svc/<name>/ack`:
-  * `pause` / `drain` → **Upstream-Versand ruht**; eingehende Zigbee-Daten bleiben im
-    Store-&-Forward-Puffer (BadgerDB) → **kein Datenverlust**.
-  * `resume` → Versand läuft weiter und **leert den Puffer**.
-  * `restart` / `stop` → geordnetes Beenden (ein Supervisor wie `systemd Restart=always`
-    bzw. Docker startet bei `restart` neu).
-
-**Konfiguration** (`config.yaml`, Abschnitt `monitor:`) — ohne Angaben „out of the box",
-weil Ziel/Token aus dem `http:`- bzw. `mqtt:`-Block abgeleitet werden:
-```yaml
-monitor:
-  enabled: true       # Gesamt-Schalter (Heartbeat + Steuerung); false = ganz aus
-  control: true       # nur die Fernsteuerung ein/aus
-  device: "svc-edgeproxy"
-  interval_s: 30
-  # ingest_url: "http://<monitor>:58080/api/v1/ingest"  # optional, sonst http.endpoint
-  # token: "<ingest-token>"                              # optional, sonst http.token / mqtt.password
-```
-> **Sicherheit/Public-Repo:** committe **keine echten Tokens**. Die Werte in
-> `config.yaml` sind Beispiel-/Testwerte; produktiv über die eigene, nicht versionierte
-> Konfiguration setzen.
 
 ## Konfiguration und Betrieb
 - Alle Parameter und Architektur-Diagramme: [Konfigurations-Doku](docs/configuration.md).

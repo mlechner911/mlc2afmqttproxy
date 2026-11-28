@@ -120,7 +120,7 @@ routes:
     mode: "mqtt"                    # "mqtt" (Standard) oder "http"
     upstream: "tcp://cloud.example.com:1883"
     username: "demo"
-    password: "<ingest-token>"
+    password: "<passwort-oder-token>"
     topic_alias: true
     # http: { endpoint: "...", token: "..." }   # bei mode: "http"
     filter:                         # wirkt ZUSÄTZLICH zu mqtt.filter
@@ -132,7 +132,7 @@ routes:
     # control:                      # Felder je Gerät (bei list: die einzige Freigabe)
     #   "0x00158d0000000001": [child_lock]
 
-# (Optional) Rückweg: der Sensor Monitor schaltet Geräte über den Proxy. Standardmäßig AN,
+# (Optional) Rückweg: der Upstream schaltet Geräte über den Proxy. Standardmäßig AN,
 # ohne Angaben nutzbar. Siehe „Rückweg" unten.
 control:
   # enabled: true                  # false = Rückweg aus (auch für alle Routen)
@@ -150,10 +150,10 @@ control:
 > `mqtt.downstream_config` gibt es seit 1.5 nicht mehr (es hat nie funktioniert) und wird mit
 > einer Warnung ignoriert. Der Weg vom Upstream zu den Geräten ist der Rückweg.
 
-### Rückweg: Geräte aus dem Monitor schalten
+### Rückweg: Geräte aus dem Upstream schalten
 
 - **Was schaltbar ist** (`allow`):
-  - `operate` (Vorgabe): an jedem Gerät des Mandanten die Bedienfelder `state`, `brightness`,
+  - `operate` (Vorgabe): an jedem Gerät die Bedienfelder `state`, `brightness`,
     `color_temp`, `color`, `position`, `state_<kanal>`.
   - `writable`: jedes Feld, das das Gerät selbst als setzbar meldet — auch Einstellungen und
     Kalibrierung.
@@ -161,17 +161,17 @@ control:
     Liste ein**; ohne `list` ergänzt sie nur Felder. Per Vorgabe schränkt der Rückweg nie ein.
 - **Welche Geräte:** beim Haupt-Upstream alle, die zigbee2mqtt kennt; bei einer Route nur ihre
   `devices`. Neu angelernte Geräte sind ohne Neustart schaltbar. Welche davon tatsächlich
-  geschaltet werden, entscheidet der Monitor.
+  geschaltet werden, entscheidet das Backend.
 - In jedem Modus lehnt der Proxy ab, was das Gerät nicht setzen kann, was offline oder unbekannt
   ist und mehr als `per_minute` Befehle je Minute.
 - **Wohin die Befehle gehen:** ohne `broker` in den eigenen Broker (zigbee2mqtt hängt am Proxy);
   mit `broker` an diesen, z. B. Mosquitto, an dem auch Home Assistant hängt.
-- Ablauf, Quittung und Ablehnungsgründe: [mlc-sensor-monitor.md › Geräte schalten](mlc-sensor-monitor.md#geräte-schalten-rückweg).
+- Topics, Ablauf, Quittung und Ablehnungsgründe: [backend.md › Rückweg](backend.md#3b--rückweg-geräte-schalten).
 
 ### Routen: mehrere Ziele von einem Standort
 
-Ein Standort mit **einem** Zigbee-Netz kann Daten an **mehrere Ziele** geben, etwa an zwei
-Mandanten: das vollständige Testlabor und eine Demo mit ausgewählten Geräten.
+Ein Standort mit **einem** Zigbee-Netz kann Daten an **mehrere Ziele** geben, etwa alle Geräte
+ins eigene System und eine Auswahl an einen Kunden oder Partner.
 
 - **Eigener Puffer und Worker je Route.** Fällt ein Ziel aus, puffert nur dessen Route; die
   anderen senden weiter. Kein Datenverlust je Ziel.

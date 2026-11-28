@@ -1,4 +1,4 @@
-# Erster Testlauf: an den MLC Sensor Monitor weiterleiten (eigener MQTT-Broker).
+# Beispiel: zigbee2mqtt → Proxy → Upstream-MQTT-Broker. Erweiterte Nutzung: docs/backend.md
 mode: "mqtt"
 
 server:
@@ -25,7 +25,7 @@ storage:
 
 mqtt:
   # Lokaler Broker, an den Zigbee2MQTT publiziert (z2m mqtt.server hierauf zeigen).
-  # Was hier ankommt, geht mit dem Ingest-Token in den Nachweis — deshalb nur lokal:
+  # Was hier ankommt, geht mit dem Zugang des Upstreams hinaus — deshalb nur lokal:
   # bind 127.0.0.1 (Standard) für z2m bzw. mqttbridge auf derselben Box. Läuft z2m auf
   # einem anderen Rechner: bind auf die Adresse der Box UND ein Konto (local_users; in z2m
   # mqtt.user/mqtt.password) — ohne Konto startet der Proxy dann nicht.
@@ -35,14 +35,10 @@ mqtt:
   #     password: "CHANGEME"
   local_port: 1884
   ws_port: 1885
-  # Upstream = MLC Sensor Monitor (eigener eingebetteter Broker). Gleicher Host →
-  # 127.0.0.1; sonst <host>:51883. Backend braucht MQTT_BROKER_ADDR=0.0.0.0:51883.
-  upstream: "tcp://127.0.0.1:51883"
+  # Upstream-Broker; außer Haus verschlüsselt (ssl:// bzw. wss://).
+  upstream: "tcp://broker.example.com:1883"
   username: "CHANGEME"
-  # MUSS einem Eintrag in INGEST_TOKENS des Backends entsprechen (deploy/.env).
-  # password: "<Ingest-Token aus INGEST_TOKENS bzw. Betreiber-Konsole>"
-
-    # Der Mandant, unter dem dieser Proxy einliefert — nicht der oeffentliche.
+  # Passwort bzw. Zugangs-Token, wie der Upstream es verlangt.
   password: "CHANGEME"
   # Nutzt MQTT 5 Topic Aliases zur massiven Reduktion der übertragenen Datenmenge.
   topic_alias: true
@@ -74,9 +70,9 @@ mqtt:
 
 # Fallback/alternativ (mode: http) — falls statt MQTT der HTTP-Ingest genutzt wird.
 http:
-  endpoint: "http://127.0.0.1:58080/api/v1/ingest"
+  endpoint: "https://ingest.example.com/api/v1/ingest"
   # Muss identisch zu mqtt.password sein, damit Heartbeat und Weiterleitung
-  # denselben Mandanten treffen. Der konkrete Wert steht in der lokalen
+  # denselben Zugang nutzen. Der konkrete Wert steht in der lokalen
   # config.yaml und gehoert nicht ins Repository.
   token: "CHANGEME"
 
@@ -87,11 +83,10 @@ worker:
   retry_min_s: 1
   retry_max_s: 60
 
-# Optionale Selbst-Überwachung/-Steuerung über den MLC Sensor Monitor.
+# Optional: Heartbeat und Fernsteuerung für ein eigenes Backend (docs/backend.md).
 # STANDARDMÄSSIG AKTIV — der Proxy meldet sich periodisch als Dienst (Heartbeat)
-# und ist fernsteuerbar (pause/resume/restart/stop). Er läuft aber auch OHNE Monitor
-# normal weiter; schlägt der Heartbeat fehl, wird er einfach wiederholt. Es werden
-# keine internen Monitor-Pakete eingebunden (lose Kopplung).
+# und ist fernsteuerbar (pause/resume/restart/stop). Er läuft aber auch OHNE Backend
+# normal weiter; schlägt der Heartbeat fehl, wird er einfach wiederholt.
 #
 # Ohne weitere Angaben funktioniert das „out of the box": Heartbeat geht an
 # http.endpoint mit http.token (bzw. mqtt.password als Token), Steuerung läuft über
@@ -102,13 +97,11 @@ monitor:
   enabled: true
   # Nur die Fernsteuerung (cmd/svc/<device>) ein-/ausschalten. (unges. = true)
   control: true
-  # Gerätename im Monitor (muss mit "svc-" beginnen). Daraus folgt das Steuer-Topic
+  # Gerätename im Heartbeat (muss mit "svc-" beginnen). Daraus folgt das Steuer-Topic
   # cmd/svc/edgeproxy (ohne "svc-").
   device: "svc-edgeproxy"
-  # Kundennummer des Mandanten im Monitor (Betreiberkonsole, z. B. "4111"). Gesetzt, hört die
-  # Fernsteuerung auf cmd/svc/<kundennummer>/edgeproxy — der Monitor lässt eine Box seit
-  # 12.11.2026 nur ihren eigenen Zweig lesen. Leer nur im Eigenbetrieb (cmd/svc/edgeproxy);
-  # bei einem Kunden ohne Nummer gibt es keine Fernsteuerung (Heartbeat läuft weiter).
+  # Optionaler Zwischenzweig im Steuer-Topic: gesetzt → cmd/svc/<wert>/edgeproxy. Für Broker,
+  # die jedem Zugang nur einen eigenen Zweig erlauben. Leer → cmd/svc/edgeproxy.
   customer_number: ""
   # Heartbeat-Intervall in Sekunden.
   interval_s: 30
@@ -117,20 +110,20 @@ monitor:
   max_pause_minutes: 60
   # Optional: abweichendes Heartbeat-Ziel/Token (sonst aus dem http-Block bzw.
   # mqtt.password). Praktisch, wenn mode: "mqtt" ist und der HTTP-Ingest woanders liegt.
-  # ingest_url: "http://127.0.0.1:58080/api/v1/ingest"
+  # ingest_url: "https://ingest.example.com/api/v1/ingest"
   # token: "edge-test-7f3a9c12e8"
 
 # Optional: ZUSÄTZLICHE Upstreams (Routen) neben dem Haupt-Upstream oben. Jede Route hat
-# eigenen Zugang (z. B. Ingest-Token eines anderen Mandanten), eigenen Filter und eigenen
+# eigenen Zugang (z. B. ein anderes Konto oder Ziel), eigenen Filter und eigenen
 # Puffer + Worker (<storage.path>/routes/<name>) — ein unerreichbares Ziel hält die anderen
 # nicht auf. Mit `devices` gehen nur diese Zigbee-Geräte hinaus (friendly_name, wie es im
 # Topic steht, oder IEEE) und ein auf sie GEKÜRZTES bridge/devices; andere bridge/*-Meldungen
 # (z. B. bridge/info mit der z2m-Konfiguration) gehen über eine Route mit Geräteliste nie hinaus.
 #routes:
 #  - name: demo
-#    upstream: "tcp://127.0.0.1:51883"
+#    upstream: "ssl://partner.example.com:8883"
 #    username: "demo"
-#    password: "<ingest-token-des-zielmandanten>"
+#    password: "<zugang-des-ziels>"
 #    topic_alias: true
 #    devices:
 #      - "0x00158d0000000001"
@@ -141,13 +134,13 @@ monitor:
 #    control:
 #      "0x00158d0000000001": [child_lock]
 
-# Rückweg (seit 1.5): der Sensor Monitor schaltet Geräte über den Proxy. Standardmäßig AN, ohne
+# Rückweg (seit 1.5): das Backend schaltet Geräte über den Proxy (docs/backend.md). Standardmäßig AN, ohne
 # Konfiguration nötig. Der Proxy schaltet nie selbst, puffert keine Befehle und quittiert auf
 # …/ack erst, wenn das Gerät den neuen Zustand meldet. Welche Geräte geschaltet werden, entscheidet
-# der Monitor; der Proxy begrenzt es auf das, was hier erlaubt ist UND was das Gerät setzen kann.
+# das Backend; der Proxy begrenzt es auf das, was hier erlaubt ist UND was das Gerät setzen kann.
 #control:
 #  enabled: true                 # false = Rückweg aus
-#  allow: operate                # Vorgabe: schränkt NIE ein — jedes Gerät des Mandanten ist schaltbar
+#  allow: operate                # Vorgabe: schränkt NIE ein — jedes Gerät ist schaltbar
 #                                # operate: state, brightness, color_temp, color, position, state_<kanal>
 #                                # writable: alles, was das Gerät als setzbar meldet (auch Kalibrierung)
 #                                # list: nur die devices-Liste unten — nur so schränkt eine Liste ein

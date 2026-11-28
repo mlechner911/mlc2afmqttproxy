@@ -13,7 +13,7 @@ Das Backend ist in folgende Logik-Bausteine unterteilt:
 - **`pkg/history`**: Verlaufsstatistik — misst alle 15 s die Zähler, verbucht die Differenzen in 10-Minuten-Abschnitten (31 Tage) und Tageswerten (400 Tage), führt Zustandsintervalle der Weiterleitung (ok, Upstream weg, pausiert, Puffer voll) und die Nachrichten je Gerät. JSON-Dateien unter `<storage.path>/history/`.
 - **`pkg/devices`**: Beobachtet die Zigbee-Geräte (Liste aus `zigbee2mqtt/bridge/devices`, Verfügbarkeit, Batterie, Linkqualität, zuletzt gesehen) — als Beobachter am Broker, vor Filter und Deduplizierung.
 - **`pkg/control`**: Rückweg — nimmt Befehle `cmd/zb/…/<ieee>/set` je Upstream an (eigene Verbindung ohne gespeicherte Sitzung), prüft sie (`control.allow`, Geräte der Route, setzbare Felder aus `bridge/devices`, online, Rate-Limit), reicht sie an `zigbee2mqtt/<gerät>/set` weiter und quittiert auf `…/ack`, sobald das Gerät den Zustand meldet. Puffert nie.
-- **`pkg/svcmon`**: Heartbeat an den MLC Sensor Monitor (Zustand, Puffer, Verbindungen, Version) und Fernsteuerung.
+- **`pkg/svcmon`**: Heartbeat an einen HTTP-Endpunkt (Zustand, Puffer, Verbindungen, Version) und Fernsteuerung über `cmd/svc/<name>` ([backend.md](backend.md)).
 - **`pkg/web`**: **Gin-Webserver** mit öffentlicher Statistik (`/status`, `/history`, `/devices`) und geschütztem Teil (Live-Tunnel `/mqtt`, `/config`, `/filters`; Session-Cookie oder Basic Auth). Oberfläche in `pkg/web/static`: Vanilla-JS-Module, Tailwind (Standalone-CLI, `task web:css`, Eingabe `web/app.css`), Diagramme mit ml-time-graph (vendored, `task web:vendor`).
 
 ## Datenfluss (Upstream)
@@ -24,7 +24,7 @@ Das Backend ist in folgende Logik-Bausteine unterteilt:
 5. Bei Erfolg wird der Eintrag aus der BadgerDB gelöscht (FIFO-Prinzip).
 
 ## Datenfluss (Rückweg)
-1. Der Monitor schreibt `cmd/zb/<kundennr>/<ieee>/set` in den Upstream-Broker.
+1. Das Backend schreibt `cmd/zb/<…>/<ieee>/set` in den Upstream-Broker.
 2. `pkg/control` empfängt den Befehl über das Abo `cmd/zb/#` (je Haupt-Upstream und Route) und prüft ihn.
 3. Der Befehl geht an `zigbee2mqtt/<gerät>/set` — in den eigenen Broker oder an `control.broker`.
 4. Meldet `zigbee2mqtt/<gerät>` den gewünschten Zustand, geht `ok` auf `…/ack`; sonst `timeout` oder `rejected`.

@@ -418,8 +418,8 @@ info:
 paths:
   /api/v1/control:
     get:
-      description: Freigegebene Geräte je Mandant, Ergebnisse seit dem Start, die
-        letzten 200 Befehle. Nur angemeldet.
+      description: Freigaben je Upstream (Haupt und Routen), Ergebnisse seit dem Start,
+        die letzten 200 Befehle. Nur angemeldet.
       produces:
       - application/json
       responses:
@@ -433,7 +433,7 @@ paths:
             additionalProperties:
               type: string
             type: object
-      summary: Rückweg (Befehle aus dem Monitor)
+      summary: Rückweg (Befehle aus dem Upstream)
       tags:
       - Control
   /api/v1/devices:

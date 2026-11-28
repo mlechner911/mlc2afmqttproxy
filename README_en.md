@@ -45,7 +45,7 @@ Whether you are forwarding IoT data centrally to the cloud or integrating it int
 * **Poison Message Protection:** The background worker actively detects "poison" messages (e.g., publish attempts on wildcard topics like `+/#` or server `Reason Codes != 0`) and safely purges them from the local database. This effectively prevents head-of-line blocking and infinite reconnect loops.
 * **Topic Aliases (MQTT 5):** Drastically reduces bandwidth consumption by replacing long topic strings (e.g., `zigbee2mqtt/0xf074bffffe91bd75`) with a simple integer alias after the first transmission. The proxy automatically detects upstream server restarts and safely resynchronizes aliases.
 * **Two Upstream Modes**: 
-  * `http`: Maps flat Zigbee JSON directly to the structured MLC Sensor Monitor format (`POST /api/v1/ingest`).
+  * `http`: Turns flat Zigbee JSON into simple readings (`device`, `readings[key, value, ts]`) and `POST`s them to an ingest endpoint.
   * `mqtt`: Forwards MQTT messages with `QoS 1` to an upstream cloud broker. Since MQTT v3.1.1 does not support timestamp metadata by default, the proxy offers three configurable `timestamp_mode` options:
     * `none`: Default behavior (No timestamp).
     * `json_inject`: Unpacks JSON payloads and injects the timestamp (Unix ms) as the `_ts` attribute by default ("inject if absent" - existing fields are never overwritten!).
@@ -55,8 +55,7 @@ Whether you are forwarding IoT data centrally to the cloud or integrating it int
   > **Note on Timestamps & Zigbee2MQTT:** If you are not using our own MLC backend, you should enable the `last_seen` option (as `epoch`) in Zigbee2MQTT. You can then set `timestamp_field: "last_seen"` in the proxy configuration. The proxy will act as a clean polyfill and only insert its reception time if Zigbee2MQTT hasn't provided a value yet.
 
   * **Topic Rewrite:** Optionally, an incoming topic prefix (`match_prefix`) can be replaced with another (`replace_with`) during MQTT forwarding (e.g., from `zigbee2mqtt/` to `/v1/bridgedataxxx/`).
-* **Return path (monitor → device, on by default):** The MLC Sensor Monitor switches lights, plugs and blinds through the proxy — without any configuration on the box. The proxy **never switches by itself**: it passes commands to zigbee2mqtt, never buffers them and acknowledges "ok" only once the device reports the new state. Details: [Connecting to the monitor › Switching devices](docs/mlc-sensor-monitor_en.md#switching-devices-return-path).
-* **Self-monitoring & remote control (optional, on by default):** The proxy registers with the MLC Sensor Monitor as a service (`svc-edgeproxy`) via heartbeat and is **remotely controllable** (pause/resume/restart/stop). If it goes down, the monitor raises an event automatically — so the Zigbee-critical edge path is fully monitored. Deliberately **loosely coupled** (no code import, plain HTTP+MQTT) and disableable via `monitor.enabled: false`; the proxy keeps running without the monitor. `pause`/`drain` keep incoming data safely buffered (no loss). See the `monitor:` section in `config.yaml`.
+* **Advanced use (optional, on by default):** With a backend of your own you can **monitor** the proxy (heartbeat with state, buffer and connections — e.g. for Grafana or Uptime Kuma), **control it remotely** (pause/resume/restart/stop via `cmd/svc/<name>`) and **switch devices** (return path `cmd/zb/…/<ieee>/set`, acknowledged only once the device reports the state). The proxy **never switches by itself** and never buffers commands; everything runs over the existing upstream connection and can be switched off per channel. Formats and flow: [Advanced use](docs/backend_en.md).
 * **Health & Diagnostics**: Built-in web dashboard (Port `8097`) displays the live buffer level and status information (`/api/v1/health` returns the version).
 * **Fail-Safe**: Out-of-the-box systemd deployment for autostart after power failures.
 * **Best Practice Setup**: For a detailed overview of the optimal, fail-safe hardware setup, see [Best Setup & Integration (German)](docs/best_setup.md).
@@ -123,8 +122,8 @@ Use `./bin/mqttbridge --help` for more options.
 - All parameters and architecture diagrams: [Configuration Documentation](docs/configuration_en.md).
 - **Operation** — usage, authenticating to the upstream, reading the buffer, backing up the
   configuration, updating, security conditions: [docs/betrieb_en.md](docs/betrieb_en.md).
-- **Connecting to the MLC Sensor Monitor** — ingest token (where from, where to, changing it),
-  several tenants via routes, heartbeat and remote control: [docs/mlc-sensor-monitor_en.md](docs/mlc-sensor-monitor_en.md).
+- **Advanced use** — connecting your own backend: heartbeat, remote control, switching devices,
+  with a flow diagram: [docs/backend_en.md](docs/backend_en.md).
 
 ## Versioning
 The version of the proxy is automatically derived from your Git tags during the build (`task build`) and compiled into the binary. It can be queried at any time via the `GET /api/v1/health` endpoint.

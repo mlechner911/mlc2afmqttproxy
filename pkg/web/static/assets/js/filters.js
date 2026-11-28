@@ -52,7 +52,7 @@ export async function loadFilters(uptimeS) {
     );
 }
 
-// controlCard: Rückweg — welche Geräte der Monitor schalten darf, Ergebnisse, letzte Befehle.
+// controlCard: Rückweg — welche Geräte das Backend schalten darf, Ergebnisse, letzte Befehle.
 const RESULT = {
     ok: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
     rejected: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300',
@@ -61,7 +61,7 @@ const RESULT = {
 const timeFmt = new Intl.DateTimeFormat('en-GB', { dateStyle: 'short', timeStyle: 'medium' });
 
 function controlCard(ctl) {
-    const card = el('div', { class: 'card mb-4 text-sm' }, el('h2', { class: 'card-title' }, 'Remote control (commands from the Sensor Monitor)'));
+    const card = el('div', { class: 'card mb-4 text-sm' }, el('h2', { class: 'card-title' }, 'Remote control (commands from the upstream)'));
     if (!ctl || !ctl.enabled) {
         card.append(el('p', {}, 'Off (control.enabled: false or no MQTT upstream). The proxy never switches anything by itself.'));
         return card;

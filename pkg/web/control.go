@@ -32,8 +32,8 @@ type ControlResponse struct {
 }
 
 // GetControlHandler liefert den Stand des Rückwegs.
-// @Summary Rückweg (Befehle aus dem Monitor)
-// @Description Freigegebene Geräte je Mandant, Ergebnisse seit dem Start, die letzten 200 Befehle. Nur angemeldet.
+// @Summary Rückweg (Befehle aus dem Upstream)
+// @Description Freigaben je Upstream (Haupt und Routen), Ergebnisse seit dem Start, die letzten 200 Befehle. Nur angemeldet.
 // @Tags Control
 // @Produce json
 // @Success 200 {object} ControlResponse

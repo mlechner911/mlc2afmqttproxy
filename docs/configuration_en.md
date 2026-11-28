@@ -114,7 +114,7 @@ worker:
   # (Optional) Maximum backoff time on failures or connection drops in seconds (Default: 60)
   retry_max_s: 60
 
-# (Optional) Return path: the Sensor Monitor switches devices through the proxy. ON by default,
+# (Optional) Return path: the upstream switches devices through the proxy. ON by default,
 # works without any settings. See "Return path" below.
 control:
   # enabled: true                  # false = return path off (for all routes too)
@@ -133,10 +133,10 @@ Routes take `control_allow` and `control` (same meaning) and switch only their o
 `mqtt.downstream_config` no longer exists since 1.5 (it never worked) and is ignored with a
 warning.
 
-### Return path: switching devices from the monitor
+### Return path: switching devices from the upstream
 
 - **What can be set** (`allow`):
-  - `operate` (default): on every device of the tenant the controls `state`, `brightness`,
+  - `operate` (default): on every device the controls `state`, `brightness`,
     `color_temp`, `color`, `position`, `state_<channel>`.
   - `writable`: every field the device itself reports as settable — including settings and
     calibration.
@@ -144,12 +144,12 @@ warning.
     list restrict**; otherwise it just adds fields. By default the return path never restricts.
 - **Which devices:** on the main upstream every device zigbee2mqtt knows; on a route only its
   `devices`. Newly paired devices can be switched without a restart. Which of them actually get
-  switched is up to the monitor.
+  switched is up to the backend.
 - In every mode the proxy rejects what the device cannot set, devices that are offline or
   unknown, and more than `per_minute` commands per minute.
 - **Where commands go:** without `broker` into the proxy's own broker (zigbee2mqtt attached to the
   proxy); with `broker` to that one, e.g. Mosquitto that Home Assistant also uses.
-- Flow, acknowledgement and rejection reasons: [mlc-sensor-monitor_en.md › Switching devices](mlc-sensor-monitor_en.md#switching-devices-return-path).
+- Topics, flow, acknowledgement and rejection reasons: [backend_en.md › Return path](backend_en.md#3b--return-path-switching-devices).
 
 ## Architecture Diagram by Operation Mode
 

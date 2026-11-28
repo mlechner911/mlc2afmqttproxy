@@ -1,11 +1,11 @@
 # Betrieb: Bedienung, Anmeldung, Sicherung, Update
 
 [🇬🇧 English](betrieb_en.md) · Konfiguration im Detail: [configuration.md](configuration.md) ·
-Anbindung an den MLC Sensor Monitor (Token, Mandanten): [mlc-sensor-monitor.md](mlc-sensor-monitor.md)
+Überwachen, fernsteuern, Geräte schalten: [backend.md](backend.md)
 
 Diese Seite beschreibt den **laufenden Betrieb** des Proxys — für jeden Upstream (eigener
-MQTT-Broker, HTTP-Endpunkt, MLC Sensor Monitor). Was nur für den MLC Sensor Monitor gilt, steht
-auf der eigenen Seite.
+MQTT-Broker oder HTTP-Endpunkt). Heartbeat, Fernsteuerung und Rückweg für ein eigenes Backend
+stehen auf [backend.md](backend.md).
 
 ## So fließen die Daten
 
@@ -13,11 +13,11 @@ auf der eigenen Seite.
 Zigbee-Geräte → zigbee2mqtt → lokaler Broker des Proxys (:1884) → Puffer (BadgerDB, ./data)
                                                                       → Worker → Upstream
                                                                       → je Route: eigener Puffer → eigener Upstream
-Upstream (Monitor) → cmd/zb/…/set → Rückweg → zigbee2mqtt/<gerät>/set → Gerät, Quittung …/ack zurück
+Upstream → cmd/zb/…/set → Rückweg → zigbee2mqtt/<gerät>/set → Gerät, Quittung …/ack zurück
 ```
 
-- **Rückweg:** Befehle aus dem Monitor gehen ohne Puffer direkt an zigbee2mqtt; was nicht sofort
-  geht, wird abgelehnt ([Geräte schalten](mlc-sensor-monitor.md#geräte-schalten-rückweg)).
+- **Rückweg:** Befehle aus dem Upstream gehen ohne Puffer direkt an zigbee2mqtt; was nicht sofort
+  geht, wird abgelehnt ([backend.md › Rückweg](backend.md#3b--rückweg-geräte-schalten)).
 
 - zigbee2mqtt (oder ein anderer MQTT-Client) **publiziert an den Proxy**, nicht direkt an den
   Upstream. In z2m: `mqtt.server: mqtt://<host-des-proxys>:1884`.
@@ -30,7 +30,7 @@ Upstream (Monitor) → cmd/zb/…/set → Rückweg → zigbee2mqtt/<gerät>/set 
   Nutzlastformat; HTTP 400, 413, 415, 422; ungültiges JSON —, wird sie in
   **`<storage.path>/dead-letter.jsonl`** abgelegt (je Route im Routen-Puffer; mit Empfangszeit,
   Topic, Grund und Nutzlast) und erst dann aus dem Puffer genommen; der Rest läuft weiter. Eine
-  abgelegte Messung fehlt im Monitor — sie ist ein Befund, den jemand ansehen muss
+  abgelegte Messung fehlt beim Upstream — sie ist ein Befund, den jemand ansehen muss
   (`messages_dead_lettered_total` in `stats`). Lässt sich die Datei nicht schreiben, bleibt die
   Nachricht im Puffer.
 - Jede andere Ablehnung — auch „nicht autorisiert" (gesperrtes Token, übernommene Verbindung) —
@@ -47,12 +47,12 @@ Der Proxy meldet sich am Upstream so an, wie der Upstream es verlangt. Allgemein
 | Upstream | Wo in `config.yaml` | Bedeutung |
 | :-- | :-- | :-- |
 | MQTT-Broker | `mqtt.upstream`, `mqtt.username`, `mqtt.password` | Benutzer und Passwort, wie der Broker sie prüft |
-| HTTP-Endpunkt | `http.endpoint`, `http.token` | Token als Header (beim MLC Sensor Monitor `X-Ingest-Token`) |
+| HTTP-Endpunkt | `http.endpoint`, `http.token` | Token als Header `X-Ingest-Token` |
 | Weitere Ziele (Routen) | `routes[].upstream`, `.username`, `.password` | eigener Zugang je Route |
 
 - **Was Benutzer und Passwort bedeuten, bestimmt der Upstream.** Ein üblicher Mosquitto-Broker
-  prüft beides gegen seine Passwortdatei; der MLC Sensor Monitor wertet nur das Passwort aus
-  (Token = Mandant), siehe [mlc-sensor-monitor.md](mlc-sensor-monitor.md).
+  prüft beides gegen seine Passwortdatei; andere Backends werten etwa nur das Passwort als
+  Zugangs-Token aus.
 - **Zugang falsch oder gesperrt:** Der Upstream lehnt die Verbindung ab. Der Proxy **puffert
   weiter** (nichts geht verloren), versucht es mit wachsendem Abstand erneut
   (`worker.retry_min_s` … `retry_max_s`) und schreibt ins Protokoll
@@ -75,7 +75,7 @@ Der Proxy meldet sich am Upstream so an, wie der Upstream es verlangt. Allgemein
 | Verlauf | `http://<host>:8097/` — Statistik je Tag/Woche/Monat/Jahr, Unterbrechungen, Zigbee-Geräte (ohne Anmeldung); API `/api/v1/history`, `/api/v1/devices` |
 | Live-Baum der MQTT-Topics | Tab **Live** — mit `server.password`; ohne Passwort nur am Gerät selbst |
 | Protokoll | `journalctl -u mlc-edge-proxy -f` |
-| Versand anhalten/fortsetzen | über den Upstream (beim MLC Sensor Monitor: Seite **Dienste**), siehe dort |
+| Versand anhalten/fortsetzen | über den Upstream-Broker (`cmd/svc/<name>`), siehe [backend.md › Fernsteuerung](backend.md#3a--fernsteuerung) |
 
 **Puffer lesen:** `buffer_count` 0 = alles weitergeleitet. Wächst er und bleibt
 `messages_forward_failed_total` stehen, ist der Versand angehalten (Pause) — sonst erreicht der
@@ -142,11 +142,12 @@ Neustart (oder ein Stromausfall).
   auf etwa einen je Sekunde gebremst.
 - **Ein vorgeschalteter Broker** (z. B. mosquitto mit `mqttbridge --bidi`) braucht dieselbe
   Sorgfalt: Was ihn erreicht, erreicht über die Bridge auch den Proxy.
-- **Rückweg:** Wer Befehle in den Zweig des Mandanten am Monitor schreiben kann, schaltet die
-  Bedienfelder aller Geräte dieses Mandanten — der Monitor lässt das nur seinen eigenen Server.
+- **Rückweg:** Wer `cmd/zb/…/set` im Zweig dieses Proxys am Upstream-Broker schreiben kann,
+  schaltet die Bedienfelder aller Geräte — der Broker muss das auf das eigene Backend beschränken
+  ([backend.md › Absichern](backend.md#was-ihr-broker-absichern-muss)).
   Einschränken auf einzelne Geräte: `control.allow: list` mit `control.devices`; ganz aus:
   `control.enabled: false`. Einstellungen und Kalibrierung gehen nur mit `allow: writable`.
 - **Zum Upstream nur verschlüsselt**, sobald die Verbindung das Haus verlässt (`ssl://`/`wss://`
   bzw. `https://`).
-- Geprüft wird der Proxy bei jeder Version des MLC Sensor Monitor mit (`task edge:check`: vet,
-  Tests, bekannte Schwachstellen, semgrep, Suche nach Zugangsdaten im Repository).
+- Geprüft wird der Proxy regelmäßig mit vet, Tests, bekannten Schwachstellen (govulncheck),
+  semgrep und einer Suche nach Zugangsdaten im Repository.

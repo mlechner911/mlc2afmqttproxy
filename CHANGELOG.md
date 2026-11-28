@@ -4,7 +4,7 @@ One line per change. Background, measurements and ticket references: release not
 
 ## [Unreleased]
 
-**Upgrade:** commands from the Sensor Monitor now reach zigbee2mqtt through the proxy, switched on by default. Without configuration the monitor may set the controls (`state`, `brightness`, `color_temp`, `color`, `position`, `state_<channel>`) of every device of its tenant; `control.enabled: false` turns this off. `mqtt.downstream_config` is ignored (it never worked) and `…/set`, `…/get` and `bridge/request/…` are no longer forwarded upstream. If zigbee2mqtt is attached to another broker (e.g. Mosquitto next to Home Assistant), set `control.broker`.
+**Upgrade:** commands from the upstream now reach zigbee2mqtt through the proxy, switched on by default. Without configuration the upstream may set the controls (`state`, `brightness`, `color_temp`, `color`, `position`, `state_<channel>`) of every device (a route: of its own devices); `control.enabled: false` turns this off. `mqtt.downstream_config` is ignored (it never worked) and `…/set`, `…/get` and `bridge/request/…` are no longer forwarded upstream. If zigbee2mqtt is attached to another broker (e.g. Mosquitto next to Home Assistant), set `control.broker`.
 
 ### Added
 - Return path: commands on `cmd/zb/<…>/<ieee>/set` from the upstream go to `zigbee2mqtt/<device>/set`; the acknowledgement on the same topic with `/ack` reports `ok` only once the device reports the new state, otherwise `timeout` or `rejected` with a reason.
@@ -16,6 +16,7 @@ One line per change. Background, measurements and ticket references: release not
 - `commands_skipped_total` counts commands that were not forwarded upstream.
 
 ### Changed
+- Public docs no longer describe one specific backend: the new page [Advanced use](docs/backend_en.md) documents heartbeat, remote control and return path as general interfaces, with a flow diagram. `docs/mlc-sensor-monitor*.md` and `docs/mlc-sensor-ingest-api.md` were removed.
 - A subscription the broker rejects is logged with its reason code (e.g. `0x87` not authorized).
 
 ### Removed

@@ -17,14 +17,14 @@ const docTemplate = `{
     "paths": {
         "/api/v1/control": {
             "get": {
-                "description": "Freigegebene Geräte je Mandant, Ergebnisse seit dem Start, die letzten 200 Befehle. Nur angemeldet.",
+                "description": "Freigaben je Upstream (Haupt und Routen), Ergebnisse seit dem Start, die letzten 200 Befehle. Nur angemeldet.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Control"
                 ],
-                "summary": "Rückweg (Befehle aus dem Monitor)",
+                "summary": "Rückweg (Befehle aus dem Upstream)",
                 "responses": {
                     "200": {
                         "description": "OK",

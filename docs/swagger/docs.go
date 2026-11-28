@@ -350,6 +350,14 @@ const docTemplate = `{
                 "forwarded": {
                     "type": "integer"
                 },
+                "rates": {
+                    "description": "Rates: kleinste und größte 15-s-Rate des Tages.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/history.Rates"
+                        }
+                    ]
+                },
                 "received": {
                     "type": "integer"
                 },
@@ -404,6 +412,14 @@ const docTemplate = `{
                     "type": "string",
                     "example": "2026-11-19"
                 },
+                "rates": {
+                    "description": "Rates: kleinste und größte 15-s-Rate im Zeitraum (nur Tage mit Messung, siehe Samples).\nDurchschnitt = Zähler / Summe von Seconds.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/history.Rates"
+                        }
+                    ]
+                },
                 "received": {
                     "type": "integer"
                 },
@@ -431,6 +447,34 @@ const docTemplate = `{
                 }
             }
         },
+        "history.Rate": {
+            "type": "object",
+            "properties": {
+                "max": {
+                    "type": "number",
+                    "example": 4.2
+                },
+                "min": {
+                    "type": "number",
+                    "example": 0
+                },
+                "samples": {
+                    "type": "integer",
+                    "example": 5760
+                }
+            }
+        },
+        "history.Rates": {
+            "type": "object",
+            "properties": {
+                "forwarded": {
+                    "$ref": "#/definitions/history.Rate"
+                },
+                "received": {
+                    "$ref": "#/definitions/history.Rate"
+                }
+            }
+        },
         "history.Slot": {
             "type": "object",
             "properties": {
@@ -455,6 +499,14 @@ const docTemplate = `{
                 },
                 "forwarded": {
                     "type": "integer"
+                },
+                "rates": {
+                    "description": "Rates: kleinste und größte 15-s-Rate im Abschnitt.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/history.Rates"
+                        }
+                    ]
                 },
                 "received": {
                     "type": "integer"

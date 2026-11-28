@@ -8,6 +8,8 @@ type Slot struct {
 	Counters
 	// BufferMax ist der höchste gemessene Pufferstand im Abschnitt.
 	BufferMax int64 `json:"buffer_max"`
+	// Rates: kleinste und größte 15-s-Rate im Abschnitt.
+	Rates Rates `json:"rates"`
 }
 
 // slotStart liefert den Beginn des Abschnitts, in dem at liegt.
@@ -17,7 +19,7 @@ func slotStart(at time.Time) time.Time {
 
 // addSlot verbucht delta im Abschnitt von at. Ein laufender Proxy bekommt auch ohne Verkehr
 // einen Abschnitt — null, nicht „fehlt“.
-func (s *Store) addSlot(at time.Time, delta Counters, buffer int64) {
+func (s *Store) addSlot(at time.Time, delta Counters, buffer int64, rates Rates) {
 	start := slotStart(at)
 	sl := s.slots[start.Unix()]
 	if sl == nil {
@@ -26,5 +28,6 @@ func (s *Store) addSlot(at time.Time, delta Counters, buffer int64) {
 	}
 	sl.add(delta)
 	sl.BufferMax = max(sl.BufferMax, buffer)
+	sl.Rates.merge(rates)
 	s.dirtySlots[start.In(at.Location()).Format(dateLayout)] = true
 }

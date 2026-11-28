@@ -90,6 +90,8 @@ type Day struct {
 	Counters
 	// BufferMax ist der höchste gemessene Pufferstand des Tages (Nachrichten).
 	BufferMax int64 `json:"buffer_max"`
+	// Rates: kleinste und größte 15-s-Rate des Tages.
+	Rates Rates `json:"rates"`
 }
 
 // Sample ist eine Messung: Zählerstände seit dem Start, Pufferstand und Zustand.
@@ -141,8 +143,13 @@ func (s *Store) Record(smp Sample, at time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delta := smp.Totals
+	var rates Rates
 	if s.hasLast {
 		delta = since(smp.Totals, s.last.Totals)
+		if recv, fwd, ok := sampleRates(delta, at.Sub(s.lastAt)); ok {
+			rates.Received.observe(recv)
+			rates.Forwarded.observe(fwd)
+		}
 	}
 	s.recordSpan(smp.State, at)
 	s.last, s.lastAt, s.hasLast = smp, at, true
@@ -155,7 +162,8 @@ func (s *Store) Record(smp Sample, at time.Time) {
 	}
 	d.add(delta)
 	d.BufferMax = max(d.BufferMax, smp.Buffer)
+	d.Rates.merge(rates)
 	s.dirtyDays[date[:len(monthLayout)]] = true
-	s.addSlot(at, delta, smp.Buffer)
+	s.addSlot(at, delta, smp.Buffer, rates)
 	s.addDevices(smp.Devices, at)
 }

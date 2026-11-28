@@ -111,7 +111,7 @@ Zwei Tabs unter einer feststehenden Kopfzeile (Zustand der Weiterleitung, Puffer
 Zigbee-Verbindung, Laufzeit, Version):
 
 * **Statistics** (Standard, **ohne Anmeldung**): Zeitraum Tag/Woche/Monat/Jahr (auch per `?range=week`),
-  Kennzahlen, Nachrichten als Treppe mit Zustandsband (weitergeleitet · Upstream weg · pausiert ·
+  Kennzahlen, Nachrichten je Sekunde (Durchschnitt, Min, Max über 15-s-Fenster), Nachrichten als Treppe mit Zustandsband (weitergeleitet · Upstream weg · pausiert ·
   Puffer voll · Proxy lief nicht), Pufferstand, Liste der **Unterbrechungen**, Tabelle der
   **Zigbee-Geräte** (Nachrichten, mittlerer Sendeabstand, zuletzt gesehen, Batterie, Linkqualität,
   Status *OK/Silent/Offline/Not seen*; Klick zeigt den Verlauf des Geräts). Angemeldet zusätzlich:

@@ -11,6 +11,9 @@ type Period struct {
 	From string `json:"from" example:"2026-11-19"`
 	Counters
 	BufferMax int64 `json:"buffer_max"`
+	// Rates: kleinste und größte 15-s-Rate im Zeitraum (nur Tage mit Messung, siehe Samples).
+	// Durchschnitt = Zähler / Summe von Seconds.
+	Rates Rates `json:"rates"`
 	// Seconds je Zustand (State*) im Zeitraum; Zeit ohne Messung fehlt.
 	Seconds map[string]int64 `json:"seconds"`
 }
@@ -46,6 +49,7 @@ func (s *Store) Summary(now time.Time) []Period {
 			if date >= p.From {
 				p.add(d.Counters)
 				p.BufferMax = max(p.BufferMax, d.BufferMax)
+				p.Rates.merge(d.Rates)
 			}
 		}
 		y, m, dd := fromDay.Date()

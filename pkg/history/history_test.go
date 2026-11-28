@@ -183,3 +183,37 @@ func TestDevices(t *testing.T) {
 		t.Fatalf("Tage nach Neuladen = %+v", days)
 	}
 }
+
+// TestRates: kleinste und größte 15-s-Rate je Abschnitt, Tag und Zeitraum. Die erste Messung (ganzer
+// Stand) und eine Lücke zählen nicht; nach dem Schreiben und Laden sind die Werte noch da.
+func TestRates(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir)
+	at := t0
+	rec := func(received, forwarded int64, step time.Duration) {
+		at = at.Add(step)
+		s.Record(smp(received, forwarded, 0, StateOK), at)
+	}
+	rec(1000, 1000, 0)               // erste Messung: kein Fenster
+	rec(1030, 1015, SampleInterval)  // 2 /s und 1 /s
+	rec(1030, 1015, SampleInterval)  // 0 /s
+	rec(1120, 1105, SampleInterval)  // 6 /s
+	rec(1420, 1405, 10*time.Minute)  // Lücke: zählt nicht
+	want := Rates{Received: Rate{Min: 0, Max: 6, Samples: 3}, Forwarded: Rate{Min: 0, Max: 6, Samples: 3}}
+
+	if d := s.Days(1, at)[0].Rates; d != want {
+		t.Fatalf("Tag: %+v, soll %+v", d, want)
+	}
+	if sl := s.Slots(t0, t0.Add(SlotLength))[0].Rates; sl != want {
+		t.Fatalf("Abschnitt: %+v, soll %+v", sl, want)
+	}
+	if p := s.Summary(at)[0].Rates; p != want {
+		t.Fatalf("Zeitraum: %+v, soll %+v", p, want)
+	}
+	if err := s.Flush(at); err != nil {
+		t.Fatal(err)
+	}
+	if d := open(t, dir).Days(1, at)[0].Rates; d != want {
+		t.Fatalf("nach Laden: %+v, soll %+v", d, want)
+	}
+}

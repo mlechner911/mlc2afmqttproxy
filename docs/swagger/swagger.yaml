@@ -39,6 +39,10 @@ definitions:
         type: integer
       forwarded:
         type: integer
+      rates:
+        allOf:
+        - $ref: '#/definitions/history.Rates'
+        description: 'Rates: kleinste und größte 15-s-Rate des Tages.'
       received:
         type: integer
       stored:
@@ -75,6 +79,12 @@ definitions:
       from:
         example: "2026-11-19"
         type: string
+      rates:
+        allOf:
+        - $ref: '#/definitions/history.Rates'
+        description: |-
+          Rates: kleinste und größte 15-s-Rate im Zeitraum (nur Tage mit Messung, siehe Samples).
+          Durchschnitt = Zähler / Summe von Seconds.
       received:
         type: integer
       seconds:
@@ -93,6 +103,25 @@ definitions:
       start:
         type: string
     type: object
+  history.Rate:
+    properties:
+      max:
+        example: 4.2
+        type: number
+      min:
+        example: 0
+        type: number
+      samples:
+        example: 5760
+        type: integer
+    type: object
+  history.Rates:
+    properties:
+      forwarded:
+        $ref: '#/definitions/history.Rate'
+      received:
+        $ref: '#/definitions/history.Rate'
+    type: object
   history.Slot:
     properties:
       buffer_max:
@@ -110,6 +139,10 @@ definitions:
         type: integer
       forwarded:
         type: integer
+      rates:
+        allOf:
+        - $ref: '#/definitions/history.Rates'
+        description: 'Rates: kleinste und größte 15-s-Rate im Abschnitt.'
       received:
         type: integer
       start:

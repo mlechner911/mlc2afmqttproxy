@@ -116,12 +116,22 @@ const COUNTERS = ['received', 'filtered', 'deduplicated', 'stored', 'forwarded',
 function sumWindow(points, spans, from, to) {
     const p = Object.fromEntries(COUNTERS.map((k) => [k, 0]));
     for (const pt of points) for (const k of COUNTERS) p[k] += pt[k] || 0;
+    p.rates = { received: emptyRate(), forwarded: emptyRate() };
+    for (const pt of points) for (const k of ['received', 'forwarded']) mergeRate(p.rates[k], pt.rates?.[k]);
     p.seconds = {};
     for (const s of spans) {
         const a = Math.max(from, Date.parse(s.start)), b = Math.min(to, Date.parse(s.end));
         if (b > a) p.seconds[s.state] = (p.seconds[s.state] || 0) + (b - a) / 1000;
     }
     return p;
+}
+
+const emptyRate = () => ({ min: 0, max: 0, samples: 0 });
+function mergeRate(r, o) {
+    if (!o || !o.samples) return;
+    r.min = r.samples ? Math.min(r.min, o.min) : o.min;
+    r.max = r.samples ? Math.max(r.max, o.max) : o.max;
+    r.samples += o.samples;
 }
 
 function localMidnight(date) {
@@ -152,4 +162,34 @@ function renderKPIs(p) {
             total ? `of ${fmtDuration(total)} running` : 'no data yet',
             avail == null ? '' : avail >= 99 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'),
     );
+    renderRates(p, total);
+}
+
+// renderRates: Nachrichten je Sekunde — Durchschnitt aus Zähler / Laufzeit, Min/Max aus den
+// 15-s-Messungen. Min/Max gibt es erst seit dem Einbau; deckt die Messung den Zeitraum nicht ab,
+// steht dabei, wie viel davon.
+const fmtRate = (v) => (v === 0 ? '0' : v < 10 ? v.toFixed(2) : v.toFixed(1));
+function renderRates(p, running) {
+    const rows = [['Received', 'received', ''], ['Forwarded', 'forwarded', 'text-emerald-600 dark:text-emerald-400']];
+    const cell = (v, extra = '') => el('td', { class: `py-1 pl-6 text-right text-lg font-semibold tabular-nums ${extra}` }, v);
+    const measured = Math.max(...rows.map(([, k]) => p.rates?.[k]?.samples || 0)) * 15;
+    const note = !running ? 'No running time in this period yet.'
+        : !measured ? 'Min/max: not measured in this period yet (recorded since version 1.5).'
+            : measured < 0.9 * running ? `Min/max over 15-s windows, measured for ${fmtDuration(measured)} of ${fmtDuration(running)} running.`
+                : 'Average over the running time; min/max over 15-s windows.';
+    $('rates').replaceChildren(el('div', { class: 'card' },
+        el('h2', { class: 'card-title' }, 'Messages per second'),
+        el('div', { class: 'overflow-x-auto' }, el('table', { class: 'text-sm' },
+            el('thead', {}, el('tr', { class: 'table-head' }, ['', 'Average', 'Min', 'Max'].map((h, i) =>
+                el('th', { class: `py-1 ${i ? 'pl-6 text-right' : ''}` }, h)))),
+            el('tbody', {}, rows.map(([label, k, tone]) => {
+                const r = p.rates?.[k];
+                const has = r && r.samples > 0;
+                return el('tr', { class: 'table-row' },
+                    el('td', { class: 'py-1 font-medium' }, label),
+                    cell(running ? fmtRate((p[k] || 0) / running) : '–', tone),
+                    cell(has ? fmtRate(r.min) : '–'),
+                    cell(has ? fmtRate(r.max) : '–'));
+            })))),
+        el('p', { class: 'mt-2 text-xs text-slate-500 dark:text-slate-400' }, note)));
 }

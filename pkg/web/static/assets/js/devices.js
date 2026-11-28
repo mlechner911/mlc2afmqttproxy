@@ -8,11 +8,14 @@ const STATUS = {
     offline: ['Offline', 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300'],
     unknown: ['Not seen', 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'],
 };
-// Probleme zuerst, dann nach Name.
-const ORDER = { offline: 0, silent: 1, unknown: 2, ok: 3 };
+// Auffällige zuerst (schweigt plötzlich), dann nach Name. Offline-Geräte stehen eingeklappt am Ende:
+// meist ausgesteckt oder abgebaut — dauerhaft oben verdrängten sie die laufenden Geräte.
+const ORDER = { silent: 0, unknown: 1, ok: 2, offline: 3 };
+const OFFLINE_KEY = 'devices.showOffline';
 
 let open = null; // Name des aufgeklappten Geräts
 let ctx = null;
+let showOffline = (() => { try { return localStorage.getItem(OFFLINE_KEY) === '1'; } catch { return false; } })();
 
 export async function loadDevices(c) {
     ctx = c;
@@ -42,7 +45,26 @@ export async function loadDevices(c) {
         el('thead', {}, el('tr', { class: 'table-head' },
             ['Device', 'Model', 'Status', periodLabel, 'Every', 'Last seen', 'Battery', 'Link'].map((h, i) =>
                 el('th', { class: `py-1.5 pr-4 ${i >= 3 ? 'text-right' : ''}` }, h)))),
-        el('tbody', {}, list.flatMap((d) => row(d, periodKey)))));
+        el('tbody', {}, [
+            ...list.filter((d) => d.status !== 'offline').flatMap((d) => row(d, periodKey)),
+            ...offlineGroup(list.filter((d) => d.status === 'offline'), periodKey),
+        ])));
+}
+
+// offlineGroup: Kopfzeile zum Auf-/Zuklappen, darunter die Offline-Geräte (nur aufgeklappt).
+function offlineGroup(offline, periodKey) {
+    if (!offline.length) return [];
+    const head = el('tr', { class: 'table-row cursor-pointer select-none hover:bg-slate-50 dark:hover:bg-slate-800/40' },
+        el('td', { colspan: 8, class: 'py-2 text-sm text-slate-500 dark:text-slate-400' },
+            el('button', { type: 'button', class: 'font-medium', 'aria-expanded': String(showOffline) },
+                `${showOffline ? '▾' : '▸'} ${offline.length} offline device${offline.length === 1 ? '' : 's'}`),
+            showOffline ? '' : ' — click to show'));
+    head.addEventListener('click', () => {
+        showOffline = !showOffline;
+        try { localStorage.setItem(OFFLINE_KEY, showOffline ? '1' : '0'); } catch { /* ohne Speicher: nur bis zum Neuladen */ }
+        loadDevices(ctx);
+    });
+    return [head, ...(showOffline ? offline.flatMap((d) => row(d, periodKey)) : [])];
 }
 
 function row(d, periodKey) {
